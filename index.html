@@ -147,7 +147,7 @@ function status(w){
 }
 function toast(m){var h=document.getElementById('toastHost');h.innerHTML='<div class="toast" role="status">'+esc(m)+'</div>';setTimeout(function(){h.innerHTML=''},2200)}
 function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function fdate(s){try{return new Date(s+'T12:00').toLocaleDateString('nb-NO',{day:'numeric',month:'short',year:'numeric'})}catch(e){return s}}
+function fdate(s){if(!s)return 'ukjent dato';try{return new Date(s+'T12:00').toLocaleDateString('nb-NO',{day:'numeric',month:'short',year:'numeric'})}catch(e){return s}}
 function byId(id){return db.wines.filter(function(w){return w.id===id})[0]}
 function copy(text,btn){
   function fallback(){var ta=document.getElementById('exportBox'); if(ta){ta.focus();ta.select();} toast('Marker teksten og kopier manuelt')}
@@ -311,6 +311,15 @@ document.addEventListener('click',function(e){
   else if(a==='missSkip'){var nx=missNext(ui.pr.target,[ui.pr.target]);ui.pr.target=nx;ui.pr.text='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missStop'){ui.pr.target='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missAll'){ui.missAll=!ui.missAll;render()}
+  else if(a==='rcpClear'){ui.imp=[];render()}
+  else if(a==='vivRead'){vivLoad(val('viv_text'),'innlimt tekst')}
+  else if(a==='vivPlanGo'){vivPlanGo()}
+  else if(a==='vivApply'){vivApply()}
+  else if(a==='vivBack'){ui.viv.plan=null;render()}
+  else if(a==='vivMore'){ui.viv.showAll=!ui.viv.showAll;render()}
+  else if(a==='vivZero'){vivZero()}
+  else if(a==='vivKeep'){ui.vivLeft=null;render()}
+  else if(a==='vivClear'){ui.viv=null;render()}
   else if(a==='prAdd'){addProps()}
   else if(a==='addRating'&&w){addRating(w)}
   else if(a==='delRating'&&w){(w.ratings||[]).splice(+t.dataset.i,1);save();render()}
@@ -352,6 +361,13 @@ document.addEventListener('change',function(e){
   if(id==='fc'){ui.country=e.target.value;render()} else if(id==='fs'){ui.status=e.target.value;render()}
   else if(id==='fo'){ui.sort=e.target.value;render()} else if(id==='fe'){ui.empty=e.target.checked;render()}
   else if(id==='rcpt'&&e.target.files.length){readReceipts(Array.prototype.slice.call(e.target.files))}
+  else if(ds.vm){ui.viv.map[ds.vm]=e.target.value;render();window.scrollTo(0,sy)}
+  else if(ds.vp!==undefined){ui.viv.plan[+ds.vp].pick=e.target.value;render();window.scrollTo(0,sy)}
+  else if(ds.lv){ui.vivLeft.off[ds.lv]=!e.target.checked}
+  else if(id==='viv_log'){ui.vivLeft.log=e.target.checked}
+  else if(id==='viv_skip0'){ui.viv.skip0=e.target.checked}
+  else if(id==='viv_dq'){ui.viv.dq=e.target.value}
+  else if(id==='vivFile'&&e.target.files[0]){var vf=e.target.files[0],vr=new FileReader();vr.onload=function(){vivLoad(String(vr.result),vf.name)};vr.readAsText(vf)}
   else if(id==='g_scan'&&e.target.files[0]){scanFind(e.target.files[0]);e.target.value=''}
   else if(id==='f_scan'&&e.target.files[0]){scan(e.target.files[0]);e.target.value=''}
   else if(id==='impFile'&&e.target.files[0]){var r=new FileReader();r.onload=function(){doImport(String(r.result))};r.readAsText(e.target.files[0])}
@@ -423,11 +439,12 @@ function pdfLines(file){
   });
 }
 function readReceipts(files){
-  ui.imp=[];ui.impBusy='Leser '+files.length+' fil(er)…';render();
+  ui.imp=ui.imp||[];ui.impBusy='Leser '+files.length+' fil(er)…';render();
   var p=Promise.resolve();
   Array.prototype.forEach.call(files,function(f){p=p.then(function(){return pdfLines(f)}).then(function(lines){
     var o=parseReceiptLines(lines);o.file=f.name;
-    o.dup=!!(o.order&&(db.imports||[]).some(function(x){return x.order===o.order}));
+    var dupDb=!!(o.order&&(db.imports||[]).some(function(x){return x.order===o.order})),dupBatch=!!(o.order&&ui.imp.some(function(x){return !x.error&&x.order===o.order}));
+    o.dup=dupDb||dupBatch;o.dupWhy=dupDb?'Allerede importert':(dupBatch?'Samme ordre er allerede valgt':'');
     var s=o.lines.reduce(function(a,l){return a+l.total},0);
     o.check=(o.sum==null)?'':(Math.abs(s-o.sum)<0.5?'ok':'avvik');
     ui.imp.push(o);
@@ -448,21 +465,23 @@ function addReceipts(){
   });
   save();ui.imp=[];ui.tab='kjeller';ui.sort='nyest';render();toast(nb+' flasker lagt til ('+nw+' nye viner)');
 }
-function vImport(){
+function vImport(){return vImportRcp()+vVivino()}
+function vImportRcp(){
   var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet. Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
    '<label for="rcpt">PDF-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf" multiple>';
   if(ui.impBusy)h+='<p class="meta" role="status">'+esc(ui.impBusy)+'</p>';
-  var ok=0;
+  var ok=0,tb=0,ts=0;
   ui.imp.forEach(function(o){
     h+='<div class="panel"><div class="name">'+esc(o.file||'')+'</div>';
     if(o.error||!o.lines.length){h+='<div class="meta">Fant ingen varelinjer. Er dette en ordrebekreftelse fra Vinmonopolet?</div></div>';return}
     h+='<div class="meta">Ordre '+esc(o.order)+' · '+esc(o.date?fdate(o.date):'')+'</div>';
-    if(o.dup)h+='<div class="chip warn" style="display:inline-block;margin:6px 0">Allerede importert</div>';
-    else ok++;
+    if(o.dup)h+='<div class="chip warn" style="display:inline-block;margin:6px 0">'+esc(o.dupWhy||'Allerede importert')+'</div>';
+    else{ok++;tb+=o.lines.reduce(function(a,l){return a+l.qty},0);ts+=o.sum||0}
     h+='<div class="list" style="margin-top:8px">'+o.lines.map(function(l){return '<div class="logrow" style="display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px"><span class="mono">'+l.qty+'×</span><span><span class="name">'+esc(l.name)+'</span><br><span class="meta">Varenr. '+esc(l.vmp)+' (art.nr. '+esc(l.art)+')</span></span><span class="price">'+nok(l.unit)+'</span></div>'}).join('')+'</div>';
     h+='<div class="meta" style="margin-top:8px">'+o.lines.reduce(function(a,l){return a+l.qty},0)+' flasker'+(o.sum!=null?' · sum '+nok(o.sum):'')+(o.check==='ok'?' · stemmer med linjene':'')+(o.check==='avvik'?' · OBS: linjene summerer ikke til kvitteringens sum, kontroller':'')+'</div></div>';
   });
-  if(ok)h+='<div class="actions"><button class="btn" data-act="rcpAdd">Legg til i kjelleren</button></div><p class="meta">Finnes varenummeret allerede, øker antallet og prisen blir et snitt. Land, region, årgang og sted fyller du inn etterpå.</p>';
+  if(ui.imp.length)h+='<div class="actions">'+(ok?'<button class="btn" data-act="rcpAdd">Legg til '+ok+(ok===1?' ordre':' ordrer')+' ('+tb+' flasker)</button>':'')+'<button class="btn ghost" data-act="rcpClear">Tøm listen</button></div>';
+  if(ok)h+='<p class="meta">'+ok+(ok===1?' ordre':' ordrer')+' · '+tb+' flasker'+(ts?' · sum '+nok(ts):'')+'. Du kan velge flere filer nå eller i flere runder; de legges i samme liste.</p><p class="meta">Finnes varenummeret allerede, øker antallet og prisen blir et snitt. Land, region, årgang og sted fyller du inn etterpå.</p>';
   return h;
 }
 
@@ -874,6 +893,164 @@ function newWineFrom(r,useEan){
 }
 function fixVmp(w){if(w&&w.bought&&/^\d{6}$/.test(String(w.vmp))){w.vmp=String(w.vmp)+'01';return true}return false}
 
+
+/* ---------- import fra Vivino (CSV-eksport) ---------- */
+var VIV_FIELDS=[['name','Vinnavn'],['producer','Produsent'],['vintage','Årgang'],['country','Land'],['region','Region'],['type','Type'],['qty','Antall flasker'],['price','Pris per flaske'],['rating','Din vurdering'],['note','Notat']];
+var VIV_ALIAS={
+  name:['winename','name','wine','vin','vinnavn','wineandvintage'],
+  producer:['winery','producer','produsent','wineryname'],
+  vintage:['vintage','year','argang','arstall'],
+  country:['country','land','countryname'],
+  region:['region','regionname','appellation','regionalwinestyle'],
+  type:['winetype','type','style','typeofwine'],
+  qty:['quantity','bottlecount','cellarcount','count','bottles','antall','numberofbottles','bottlesincellar'],
+  price:['price','pricepaid','purchaseprice','pris','bottleprice'],
+  rating:['yourrating','myrating','userrating','rating','yourscore'],
+  note:['review','note','notes','tastingnote','comment','yourreview','yournote']
+};
+var COUNTRY_NO={'france':'Frankrike','italy':'Italia','spain':'Spania','germany':'Tyskland','portugal':'Portugal','austria':'Østerrike','usa':'USA','united states':'USA','australia':'Australia','new zealand':'New Zealand','south africa':'Sør-Afrika','argentina':'Argentina','chile':'Chile','greece':'Hellas','hungary':'Ungarn','switzerland':'Sveits','netherlands':'Nederland','united kingdom':'Storbritannia','england':'England','croatia':'Kroatia','slovenia':'Slovenia','romania':'Romania','bulgaria':'Bulgaria','lebanon':'Libanon','israel':'Israel','georgia':'Georgia','uruguay':'Uruguay','brazil':'Brasil','canada':'Canada','denmark':'Danmark','sweden':'Sverige','norway':'Norge','belgium':'Belgia','luxembourg':'Luxembourg','czech republic':'Tsjekkia','slovakia':'Slovakia','moldova':'Moldova','turkey':'Tyrkia','morocco':'Marokko','china':'Kina','japan':'Japan'};
+function csvParse(text){
+  text=String(text).replace(/^﻿/,'');
+  var first=text.split(/\r?\n/)[0]||'',cands=[',',';','\t'],d=',',best=-1;
+  cands.forEach(function(c){var n=first.split(c).length;if(n>best){best=n;d=c}});
+  var rows=[],row=[],f='',q=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text.charAt(i);
+    if(q){if(ch==='"'){if(text.charAt(i+1)==='"'){f+='"';i++}else q=false}else f+=ch}
+    else if(ch==='"')q=true;
+    else if(ch===d){row.push(f);f=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text.charAt(i+1)==='\n')i++;row.push(f);f='';if(row.length>1||row[0]!=='')rows.push(row);row=[]}
+    else f+=ch;
+  }
+  if(f!==''||row.length){row.push(f);if(row.length>1||row[0]!=='')rows.push(row)}
+  return rows;
+}
+function vivAutoMap(head){
+  var map={},used={},hn=head.map(function(h){return normS(h).replace(/ /g,'')});
+  VIV_FIELDS.forEach(function(F){
+    var k=F[0],al=VIV_ALIAS[k];
+    for(var a=0;a<al.length;a++){var i=hn.indexOf(al[a]);if(i>=0&&!used[i]){map[k]=String(i);used[i]=1;return}}
+    map[k]='';
+  });
+  return map;
+}
+function vivLoad(text,name){
+  var rows=csvParse(text);
+  if(rows.length<2){ui.viv=null;toast('Fant ingen rader. Er dette en CSV-fil?');render();return}
+  var head=rows[0].map(function(h){return String(h).trim()});
+  ui.viv={name:name,head:head,rows:rows.slice(1),map:vivAutoMap(head),skip0:true,dq:'1',msg:''};
+  render();
+}
+function vivGet(row,map,k){var i=map[k];if(i===''||i==null)return '';return String(row[+i]==null?'':row[+i]).trim()}
+function vivWine(row,map){
+  var g=function(k){return vivGet(row,map,k)},name=g('name');if(!name)return null;
+  var vint=(g('vintage').match(/(19|20)\d{2}/)||[''])[0],cn=g('country'),ty=g('type'),T='';
+  if(/spark|champ|musser|bubbl/i.test(ty))T='Musserende';else if(/ros[eé]/i.test(ty))T='Rosé';else if(/red|rød/i.test(ty))T='Rød';else if(/white|hvit/i.test(ty))T='Hvit';else if(/dessert|sweet|søt/i.test(ty))T='Dessert';else if(/fort|port|sherry/i.test(ty))T='Sterkvin';
+  var w={name:name,producer:g('producer'),vintage:vint,country:COUNTRY_NO[cn.toLowerCase()]||cn,region:g('region'),type:T,price:'',note:g('note')};
+  var pr=pnum(g('price').replace(/[^\d.,\s]/g,''));w.price=isNaN(pr)?'':pr;
+  var rt=parseFloat(g('rating').replace(',','.'));w.rating=isNaN(rt)||rt<=0?null:rt;
+  var q=parseInt(g('qty'),10);w.qty=isNaN(q)?null:q;
+  return w;
+}
+function vivKey(w){return normS(w.name+' '+(w.producer||''))+'|'+(w.vintage||'')}
+function vivQty(x,w,dq){return x.qty!=null?x.qty:(w&&(+w.qty||0)>0?+w.qty:dq)}
+function vivResolve(plan){
+  var taken={},out=[];
+  plan.forEach(function(it){
+    if(it.pick==='')return;
+    var t=null;if(it.pick!=='__new__'&&byId(it.pick)&&!taken[it.pick]){t=it.pick;taken[t]=1}
+    out.push({x:it.x,tgt:t});
+  });
+  return {out:out,taken:taken};
+}
+function vivPlanGo(){
+  var v=ui.viv,dqv=parseInt(val('viv_dq'),10),sk=document.getElementById('viv_skip0');
+  v.dq=isNaN(dqv)?1:dqv;v.skip0=sk?sk.checked:true;
+  var plan=[],skipped=0;
+  v.rows.forEach(function(row){
+    var x=vivWine(row,v.map);if(!x)return;
+    if(x.qty===0&&v.skip0){skipped++;return}
+    var c=matchWines([x.producer,x.name,x.vintage].join(' '));
+    plan.push({x:x,cands:c,pick:c.length?c[0].id:'__new__'});
+  });
+  v.plan=plan;v.skipped=skipped;v.showAll=false;render();
+}
+function vivApply(){
+  var v=ui.viv;if(!v||!v.plan)return;
+  var r=vivResolve(v.plan),touched={},add=0,upd=0,dq=v.dq;
+  r.out.forEach(function(o){
+    var x=o.x,w=o.tgt?byId(o.tgt):null;
+    if(w){
+      ['producer','vintage','country','region','type'].forEach(function(k){if(!w[k]&&x[k])w[k]=x[k]});
+      if(!w.notes&&x.note)w.notes='Vivino: '+x.note;
+      if((w.price===''||w.price==null)&&x.price!=='')w.price=x.price;
+      w.qty=vivQty(x,w,dq);upd++;
+    }else{
+      w={id:uid(),name:x.name,producer:x.producer,vintage:x.vintage,country:x.country,region:x.region,grape:'',qty:vivQty(x,null,dq),price:x.price,nowPrice:'',location:'',from:'',to:'',score:'',notes:x.note?('Vivino: '+x.note):'',vmp:'',ean:'',type:x.type||inferType({name:x.name,producer:x.producer,grape:''}),ratings:[],added:Date.now()};
+      db.wines.push(w);add++;
+    }
+    if(x.rating!=null){
+      w.ratings=w.ratings||[];var rm=x.rating<=5?5:100;
+      if(!w.ratings.some(function(q){return q.src==='Vivino'&&q.score===x.rating&&q.max===rm}))w.ratings.push({src:'Vivino',score:x.rating,max:rm,url:'',date:today()});
+    }
+    delete w.example;touched[w.id]=1;
+  });
+  var left=db.wines.filter(function(w){return !w.example&&!touched[w.id]&&(+w.qty||0)>0});
+  db.wines=db.wines.filter(function(w){return !w.example});
+  save();ui.viv=null;
+  if(left.length){var off={};left.forEach(function(w){off[w.id]=!w.bought});ui.vivLeft={ids:left.map(function(w){return w.id}),off:off,log:true}}else ui.vivLeft=null;
+  render();toast(upd+' oppdatert, '+add+' nye viner');
+}
+function vivZero(){
+  var L=ui.vivLeft;if(!L)return;var n=0;
+  L.ids.forEach(function(id){
+    if(L.off[id])return;var w=byId(id);if(!w)return;
+    if(L.log&&(+w.qty||0)>0)db.log.push({id:uid(),wineId:w.id,name:w.name,vintage:w.vintage||'',producer:w.producer||'',type:w.type||'',date:'',score:'',place:'',note:'Fra kvittering, ikke i Vivino-kjelleren. Dato ukjent ('+w.qty+' fl.).',updated:Date.now()});
+    w.qty=0;n++;
+  });
+  ui.vivLeft=null;save();render();toast(n+' viner satt til 0 flasker'+(L.log?' og lagt i Drukket':''));
+}
+function vLeft(){
+  var L=ui.vivLeft;if(!L)return '';
+  var ws=L.ids.map(byId).filter(Boolean);if(!ws.length)return '';
+  var nb=ws.reduce(function(a,w){return a+(+w.qty||0)},0);
+  return '<div class="panel"><h2 style="font-size:16px">Ikke i Vivino-kjelleren</h2><p class="meta">'+ws.length+' viner ('+nb+' flasker) ligger i appen, men står ikke i Vivino-filen. Hvis Vivino er fasit for hva du har nå, er disse trolig drukket. Merkede viner settes til 0 flasker. Vinene slettes ikke.</p>'+
+   '<div class="list">'+ws.map(function(w){return '<label class="chk" style="align-items:flex-start;padding:4px 0"><input type="checkbox" data-lv="'+esc(w.id)+'"'+(L.off[w.id]?'':' checked')+'><span style="min-width:0"><span class="name">'+esc(w.name+' '+(w.vintage||'NV'))+'</span> <span class="meta">'+esc(w.qty)+' fl.'+(w.bought?' · kjøpt '+esc(fdate(w.bought)):' · lagt inn manuelt')+'</span></span></label>'}).join('')+'</div>'+
+   '<label class="chk" style="margin-top:10px"><input type="checkbox" id="viv_log"'+(L.log?' checked':'')+'> Legg dem også i Drukket (dato ukjent)</label>'+
+   '<div class="actions"><button class="btn" data-act="vivZero">Sett merkede til 0 flasker</button><button class="btn ghost" data-act="vivKeep">Behold alle som de er</button></div></div>';
+}
+function vVivino(){
+  var v=ui.viv,h=vLeft()+'<hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h2>Importer fra Vivino</h2><p class="meta">Rekkefølge for å få riktig kjeller: 1) importer alle ordrebekreftelsene først, 2) importer Vivino til slutt. Da kobles Vivino-radene til vinene fra kvitteringene, og antallet i Vivino blir fasit for hva du har nå. Vivino: Innstillinger → Account Management → be om eksport. Pakk ut zip-filen og velg CSV-filen med kjelleren (cellar.csv). Filen leses i nettleseren din og sendes ikke videre.</p>'+
+   '<label for="vivFile">CSV-fil fra Vivino</label><input id="vivFile" type="file" accept=".csv,text/csv,text/plain"><label for="viv_text" style="margin-top:10px">Eller lim inn innholdet</label><textarea id="viv_text" style="min-height:80px"></textarea><div class="actions"><button class="btn ghost" data-act="vivRead">Les innlimt tekst</button></div>';
+  if(!v)return h;
+  if(v.plan)return h+vVivPlan(v);
+  var ws=v.rows.map(function(r){return vivWine(r,v.map)}).filter(Boolean);
+  var tot=ws.reduce(function(a,x){return a+(x.qty||0)},0);
+  h+='<div class="panel"><div class="name">'+esc(v.name)+'</div><div class="meta">'+v.rows.length+' rader. Kontroller at kolonnene er koblet riktig:</div><div class="grid2" style="margin-top:8px">'+
+   VIV_FIELDS.map(function(F){return '<div><label for="vm_'+F[0]+'">'+F[1]+'</label><select id="vm_'+F[0]+'" data-vm="'+F[0]+'"><option value="">(ikke bruk)</option>'+v.head.map(function(hh,i){return '<option value="'+i+'"'+(v.map[F[0]]===String(i)?' selected':'')+'>'+esc(hh||('Kolonne '+(i+1)))+'</option>'}).join('')+'</select></div>'}).join('')+'</div>'+
+   '<div class="grid2" style="margin-top:8px"><div><label for="viv_dq">Antall flasker når kolonnen mangler</label><input id="viv_dq" type="number" min="0" inputmode="numeric" value="'+esc(v.dq)+'"></div><label class="chk" style="align-self:end"><input type="checkbox" id="viv_skip0"'+(v.skip0?' checked':'')+'> Hopp over rader med 0 flasker</label></div>'+
+   '<div class="meta" style="margin-top:10px">Forhåndsvisning:</div><div class="list" style="margin-top:4px">'+ws.slice(0,4).map(function(x){return '<div class="logrow"><span class="name">'+esc(x.name+' '+(x.vintage||'NV'))+'</span><br><span class="meta">'+esc([x.type,x.producer,x.region,x.country].filter(Boolean).join(' · '))+(x.qty!=null?' · '+x.qty+' fl.':'')+(x.rating!=null?' · vurdering '+x.rating:'')+'</span></div>'}).join('')+'</div>'+
+   '<div class="meta" style="margin-top:8px">'+ws.length+' viner'+(v.map.qty!==''?', til sammen '+tot+' flasker':'')+'. Land oversettes til norsk der det er mulig. Ingenting lagres før du har sett gjennom sammenligningen.</div>'+
+   '<div class="actions"><button class="btn" data-act="vivPlanGo"'+(ws.length?'':' disabled')+'>Sammenlign med kjelleren</button><button class="btn ghost" data-act="vivClear">Avbryt</button></div></div>';
+  return h;
+}
+function vVivPlan(v){
+  var r=vivResolve(v.plan),dq=v.dq,nMatch=r.out.filter(function(o){return o.tgt}).length,nNew=r.out.length-nMatch,nSkip=v.plan.length-r.out.length;
+  var vivQ=r.out.reduce(function(a,o){return a+vivQty(o.x,o.tgt?byId(o.tgt):null,dq)},0);
+  var rest=db.wines.filter(function(w){return !w.example&&!r.taken[w.id]&&(+w.qty||0)>0}),restQ=rest.reduce(function(a,w){return a+(+w.qty||0)},0);
+  var shown=v.showAll?v.plan:v.plan.slice(0,40);
+  var h='<div class="panel"><div class="name">Sammenligning</div><div class="meta" style="margin:4px 0 8px">'+nMatch+' rader kobles til vin du har fra før, '+nNew+' blir nye viner'+(nSkip?', '+nSkip+' hoppes over':'')+(v.skipped?' ('+v.skipped+' rader med 0 flasker er ikke tatt med)':'')+'.</div>'+
+   '<div class="stats" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><div><b class="mono">'+vivQ+'</b><div class="meta">flasker fra Vivino</div></div><div><b class="mono">'+restQ+'</b><div class="meta">flasker i appen som ikke er i Vivino ('+rest.length+' viner)</div></div></div>'+
+   '<div class="meta">Sjekk særlig rader der koblingen er feil. Antallet i Vivino overstyrer antallet fra kvitteringene for de koblede vinene.</div><div class="list" style="margin-top:8px">'+
+   shown.map(function(it){
+     var i=v.plan.indexOf(it),x=it.x;
+     return '<div class="logrow"><div class="name">'+esc(x.name+' '+(x.vintage||'NV'))+'</div><div class="meta">'+esc([x.producer,x.region].filter(Boolean).join(' · '))+(x.qty!=null?' · Vivino: '+x.qty+' fl.':'')+'</div>'+
+      '<select data-vp="'+i+'" style="margin-top:4px" aria-label="Kobling">'+it.cands.map(function(c){var w=byId(c.id);return '<option value="'+esc(c.id)+'"'+(it.pick===c.id?' selected':'')+'>Kobles til: '+esc(w.name+' '+(w.vintage||'NV'))+' ('+esc(w.qty)+' fl. nå)</option>'}).join('')+'<option value="__new__"'+(it.pick==='__new__'?' selected':'')+'>Ny vin</option><option value=""'+(it.pick===''?' selected':'')+'>Hopp over</option></select></div>';
+   }).join('')+'</div>'+
+   (v.plan.length>40?'<div class="actions" style="margin-top:6px"><button class="btn ghost small" data-act="vivMore">'+(v.showAll?'Vis færre':'Vis alle '+v.plan.length)+'</button></div>':'')+
+   '<div class="actions"><button class="btn" data-act="vivApply">Utfør import</button><button class="btn ghost" data-act="vivBack">Endre kolonner</button><button class="btn ghost" data-act="vivClear">Avbryt</button></div><p class="meta">Etter importen får du se vinene som ikke er i Vivino, og velger om de skal settes til 0 flasker.</p></div>';
+  return h;
+}
 
 /* ---------- viner som mangler detaljer ---------- */
 function missOf(w){var m=[];if(!w.country)m.push('land');if(!(w.food&&w.food.length))m.push('mat');if(!w.from&&!w.to)m.push('drikkevindu');return m}
