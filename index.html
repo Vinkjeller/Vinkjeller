@@ -107,7 +107,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 (function(){
 'use strict';
 var KEY='vinkjeller.v1', YEAR=new Date().getFullYear();
-var db={wines:[],log:[]}, ui={tab:'kjeller',q:'',country:'',status:'',sort:'navn',empty:false,sheet:null,storageOk:true,exportText:'',importMsg:'',imp:[],impBusy:'',pr:{src:'DN',max:100,text:'',props:[],done:false,details:true,ean:'',qty:1},lg:{q:'',y:''},rk:{type:'',region:'',food:'',text:'',sort:'samlet',stock:true,wait:false,only:false,wp:3,ww:3,wf:3}};
+var db={wines:[],log:[]}, ui={tab:'kjeller',q:'',country:'',status:'',sort:'navn',empty:false,sheet:null,storageOk:true,exportText:'',importMsg:'',imp:[],impBusy:'',pr:{src:'DN',max:100,text:'',props:[],done:false,details:true,ean:'',qty:1},lg:{q:'',y:''},rk:{type:'',region:'',food:'',text:'',sort:'samlet',stock:true,wait:false,only:false,wp:3,ww:3,wf:3,locs:{},group:true}};
 
 /* ---------- lagring ---------- */
 function load(){
@@ -313,6 +313,7 @@ document.addEventListener('click',function(e){
   else if(a==='missSkip'){var nx=missNext(ui.pr.target,[ui.pr.target]);ui.pr.target=nx;ui.pr.text='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missStop'){ui.pr.target='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missAll'){ui.missAll=!ui.missAll;render()}
+  else if(a==='rkLocAll'){ui.rk.locs={};render()}
   else if(a==='rcpClear'){ui.imp=[];render()}
   else if(a==='vkRead'){vkLoad(val('vk_text'))}
   else if(a==='vkApply'){vkApply()}
@@ -358,6 +359,7 @@ document.addEventListener('click',function(e){
 });
 document.addEventListener('change',function(e){
   var id=e.target.id,ds=e.target.dataset||{},sy=window.scrollY;
+  if(ds.rl!==undefined){ui.rk.locs=ui.rk.locs||{};ui.rk.locs[ds.rl]=e.target.checked;render();window.scrollTo(0,sy);return}
   if(ds.pi!==undefined){ui.pr.props[+ds.pi].on=e.target.checked;render();window.scrollTo(0,sy);return}
   if(ds.ps!==undefined){var pr=ui.pr.props[+ds.ps];pr.pick=e.target.value;pr.on=!!pr.pick;render();window.scrollTo(0,sy);return}
   if(id&&id.indexOf('rk_')===0&&id!=='rk_text'){var rkk=id.slice(3),rkv=e.target.type==='checkbox'?e.target.checked:e.target.value;if(rkk==='wp'||rkk==='ww'||rkk==='wf')rkv=+rkv;ui.rk[rkk]=rkv;render();window.scrollTo(0,sy);return}
@@ -902,7 +904,7 @@ function fixVmp(w){if(w&&w.bought&&/^\d{6}$/.test(String(w.vmp))){w.vmp=String(w
 
 
 /* ---------- import fra Vivino (CSV-eksport) ---------- */
-var VIV_FIELDS=[['name','Vinnavn'],['producer','Produsent'],['vintage','Årgang'],['country','Land'],['region','Region'],['type','Type'],['qty','Antall flasker'],['price','Pris per flaske'],['rating','Din vurdering'],['note','Notat']];
+var VIV_FIELDS=[['name','Vinnavn'],['producer','Produsent'],['vintage','Årgang'],['country','Land'],['region','Region'],['type','Type'],['qty','Antall flasker'],['price','Pris per flaske'],['rating','Vivino-vurdering'],['rcount','Antall vurderinger'],['link','Lenke til vinen'],['note','Notat']];
 var VIV_ALIAS={
   name:['winename','name','wine','vin','vinnavn','wineandvintage'],
   producer:['winery','producer','produsent','wineryname'],
@@ -910,12 +912,14 @@ var VIV_ALIAS={
   country:['country','land','countryname'],
   region:['region','regionname','appellation','regionalwinestyle'],
   type:['winetype','type','style','typeofwine'],
-  qty:['quantity','bottlecount','cellarcount','count','bottles','antall','numberofbottles','bottlesincellar'],
+  qty:['quantity','bottlecount','cellarcount','count','bottles','antall','numberofbottles','bottlesincellar','usercellarcount'],
   price:['price','pricepaid','purchaseprice','pris','bottleprice'],
-  rating:['yourrating','myrating','userrating','rating','yourscore'],
+  rating:['yourrating','myrating','userrating','rating','yourscore','averagerating'],
+  rcount:['wineratingscount','ratingscount','numberofratings','ratings'],
+  link:['linktowine','link','url','winelink'],
   note:['review','note','notes','tastingnote','comment','yourreview','yournote']
 };
-var COUNTRY_NO={'france':'Frankrike','italy':'Italia','spain':'Spania','germany':'Tyskland','portugal':'Portugal','austria':'Østerrike','usa':'USA','united states':'USA','australia':'Australia','new zealand':'New Zealand','south africa':'Sør-Afrika','argentina':'Argentina','chile':'Chile','greece':'Hellas','hungary':'Ungarn','switzerland':'Sveits','netherlands':'Nederland','united kingdom':'Storbritannia','england':'England','croatia':'Kroatia','slovenia':'Slovenia','romania':'Romania','bulgaria':'Bulgaria','lebanon':'Libanon','israel':'Israel','georgia':'Georgia','uruguay':'Uruguay','brazil':'Brasil','canada':'Canada','denmark':'Danmark','sweden':'Sverige','norway':'Norge','belgium':'Belgia','luxembourg':'Luxembourg','czech republic':'Tsjekkia','slovakia':'Slovakia','moldova':'Moldova','turkey':'Tyrkia','morocco':'Marokko','china':'Kina','japan':'Japan'};
+var COUNTRY_NO={'fr':'Frankrike','es':'Spania','pt':'Portugal','de':'Tyskland','it':'Italia','at':'Østerrike','us':'USA','gb':'Storbritannia','uk':'Storbritannia','nz':'New Zealand','au':'Australia','za':'Sør-Afrika','ar':'Argentina','cl':'Chile','gr':'Hellas','hu':'Ungarn','ch':'Sveits','lb':'Libanon','france':'Frankrike','italy':'Italia','spain':'Spania','germany':'Tyskland','portugal':'Portugal','austria':'Østerrike','usa':'USA','united states':'USA','australia':'Australia','new zealand':'New Zealand','south africa':'Sør-Afrika','argentina':'Argentina','chile':'Chile','greece':'Hellas','hungary':'Ungarn','switzerland':'Sveits','netherlands':'Nederland','united kingdom':'Storbritannia','england':'England','croatia':'Kroatia','slovenia':'Slovenia','romania':'Romania','bulgaria':'Bulgaria','lebanon':'Libanon','israel':'Israel','georgia':'Georgia','uruguay':'Uruguay','brazil':'Brasil','canada':'Canada','denmark':'Danmark','sweden':'Sverige','norway':'Norge','belgium':'Belgia','luxembourg':'Luxembourg','czech republic':'Tsjekkia','slovakia':'Slovakia','moldova':'Moldova','turkey':'Tyrkia','morocco':'Marokko','china':'Kina','japan':'Japan'};
 function csvParse(text){
   text=String(text).replace(/^﻿/,'');
   var first=text.split(/\r?\n/)[0]||'',cands=[',',';','\t'],d=',',best=-1;
@@ -951,11 +955,12 @@ function vivLoad(text,name){
 function vivGet(row,map,k){var i=map[k];if(i===''||i==null)return '';return String(row[+i]==null?'':row[+i]).trim()}
 function vivWine(row,map){
   var g=function(k){return vivGet(row,map,k)},name=g('name');if(!name)return null;
-  var vint=(g('vintage').match(/(19|20)\d{2}/)||[''])[0],isnv=!vint&&/^\s*(n\.?v\.?|nv|u\.?v\.?)\s*$/i.test(g('vintage')),cn=g('country'),ty=g('type'),T='';
+  var vint=(g('vintage').match(/(19|20)\d{2}/)||[''])[0],isnv=!vint&&map.vintage!==''&&/^\s*(n\.?v\.?|nv|u\.?v\.?)?\s*$/i.test(g('vintage')),cn=g('country'),ty=g('type'),T='';
   if(/spark|champ|musser|bubbl/i.test(ty))T='Musserende';else if(/ros[eé]/i.test(ty))T='Rosé';else if(/red|rød/i.test(ty))T='Rød';else if(/white|hvit/i.test(ty))T='Hvit';else if(/dessert|sweet|søt/i.test(ty))T='Dessert';else if(/fort|port|sherry/i.test(ty))T='Sterkvin';
-  var w={nv:isnv,name:name,producer:g('producer'),vintage:vint,country:COUNTRY_NO[cn.toLowerCase()]||cn,region:g('region'),type:T,price:'',note:g('note')};
+  var prod=g('producer'),full=(prod&&normS(name).indexOf(normS(prod))<0)?prod+' '+name:name;
+  var w={nv:isnv,name:name,full:full,link:g('link'),rcount:parseInt(g('rcount').replace(/\D/g,''),10)||0,producer:prod,vintage:vint,country:COUNTRY_NO[cn.toLowerCase()]||cn,region:g('region'),type:T,price:'',note:g('note')};
   var pr=pnum(g('price').replace(/[^\d.,\s]/g,''));w.price=isNaN(pr)?'':pr;
-  var rt=parseFloat(g('rating').replace(',','.'));w.rating=isNaN(rt)||rt<=0?null:rt;
+  var rt=parseFloat(g('rating').replace(',','.'));w.rating=isNaN(rt)||rt<=0?null:rt;if(w.link&&!/^https?:\/\//i.test(w.link))w.link='';
   var q=parseInt(g('qty'),10);w.qty=isNaN(q)?null:q;
   return w;
 }
@@ -999,13 +1004,14 @@ function vivApply(){
       if((w.price===''||w.price==null)&&x.price!=='')w.price=x.price;
       w.qty=vivQty(x,w,dq);upd++;
     }else{
-      w={id:uid(),name:x.name,producer:x.producer,vintage:x.vintage,country:x.country,region:x.region,grape:'',qty:vivQty(x,null,dq),price:x.price,nowPrice:'',location:'',from:'',to:'',score:'',notes:x.note?('Vivino: '+x.note):'',vmp:'',ean:'',type:x.type||inferType({name:x.name,producer:x.producer,grape:''}),ratings:[],added:Date.now()};
+      w={id:uid(),name:x.full||x.name,producer:x.producer,vintage:x.vintage,country:x.country,region:x.region,grape:'',qty:vivQty(x,null,dq),price:x.price,nowPrice:'',location:'',from:'',to:'',score:'',notes:x.note?('Vivino: '+x.note):'',vmp:'',ean:'',type:x.type||inferType({name:x.name,producer:x.producer,grape:''}),ratings:[],added:Date.now()};
       db.wines.push(w);add++;
     }
     if(x.rating!=null){
       w.ratings=w.ratings||[];var rm=x.rating<=5?5:100;
-      if(!w.ratings.some(function(q){return q.src==='Vivino'&&q.score===x.rating&&q.max===rm}))w.ratings.push({src:'Vivino',score:x.rating,max:rm,url:'',date:today()});
+      if(!w.ratings.some(function(q){return q.src==='Vivino'&&q.score===x.rating&&q.max===rm})){var re={src:'Vivino',score:x.rating,max:rm,url:x.link||'',date:today()};if(x.rcount)re.note=x.rcount+' vurderinger';w.ratings.push(re)}
     }
+    if(x.link&&!w.link)w.link=x.link;
     if(x.nv&&!w.vintage)w.noVintage=true;
     delete w.example;touched[w.id]=1;
   });
@@ -1043,7 +1049,7 @@ function vVivino(){
   h+='<div class="panel"><div class="name">'+esc(v.name)+'</div><div class="meta">'+v.rows.length+' rader. Kontroller at kolonnene er koblet riktig:</div><div class="grid2" style="margin-top:8px">'+
    VIV_FIELDS.map(function(F){return '<div><label for="vm_'+F[0]+'">'+F[1]+'</label><select id="vm_'+F[0]+'" data-vm="'+F[0]+'"><option value="">(ikke bruk)</option>'+v.head.map(function(hh,i){return '<option value="'+i+'"'+(v.map[F[0]]===String(i)?' selected':'')+'>'+esc(hh||('Kolonne '+(i+1)))+'</option>'}).join('')+'</select></div>'}).join('')+'</div>'+
    '<div class="grid2" style="margin-top:8px"><div><label for="viv_dq">Antall flasker når kolonnen mangler</label><input id="viv_dq" type="number" min="0" inputmode="numeric" value="'+esc(v.dq)+'"></div><label class="chk" style="align-self:end"><input type="checkbox" id="viv_skip0"'+(v.skip0?' checked':'')+'> Hopp over rader med 0 flasker</label></div>'+
-   '<div class="meta" style="margin-top:10px">Forhåndsvisning:</div><div class="list" style="margin-top:4px">'+ws.slice(0,4).map(function(x){return '<div class="logrow"><span class="name">'+esc(x.name+' '+(x.vintage||'NV'))+'</span><br><span class="meta">'+esc([x.type,x.producer,x.region,x.country].filter(Boolean).join(' · '))+(x.qty!=null?' · '+x.qty+' fl.':'')+(x.rating!=null?' · vurdering '+x.rating:'')+'</span></div>'}).join('')+'</div>'+
+   '<div class="meta" style="margin-top:10px">Forhåndsvisning:</div><div class="list" style="margin-top:4px">'+ws.slice(0,4).map(function(x){return '<div class="logrow"><span class="name">'+esc((x.full||x.name)+' '+(x.vintage||'NV'))+'</span><br><span class="meta">'+esc([x.type,x.producer,x.region,x.country].filter(Boolean).join(' · '))+(x.qty!=null?' · '+x.qty+' fl.':'')+(x.rating!=null?' · vurdering '+x.rating:'')+'</span></div>'}).join('')+'</div>'+
    '<div class="meta" style="margin-top:8px">'+ws.length+' viner'+(v.map.qty!==''?', til sammen '+tot+' flasker':'')+'. Land oversettes til norsk der det er mulig. Ingenting lagres før du har sett gjennom sammenligningen.</div>'+
    '<div class="actions"><button class="btn" data-act="vivPlanGo"'+(ws.length?'':' disabled')+'>Sammenlign med kjelleren</button><button class="btn ghost" data-act="vivClear">Avbryt</button></div></div>';
   return h;
@@ -1058,7 +1064,7 @@ function vVivPlan(v){
    '<div class="meta">Sjekk særlig rader der koblingen er feil. Antallet i Vivino overstyrer antallet fra kvitteringene for de koblede vinene.</div><div class="list" style="margin-top:8px">'+
    shown.map(function(it){
      var i=v.plan.indexOf(it),x=it.x;
-     return '<div class="logrow"><div class="name">'+esc(x.name+' '+(x.vintage||'NV'))+'</div><div class="meta">'+esc([x.producer,x.region].filter(Boolean).join(' · '))+(x.qty!=null?' · Vivino: '+x.qty+' fl.':'')+'</div>'+
+     return '<div class="logrow"><div class="name">'+esc((x.full||x.name)+' '+(x.vintage||'NV'))+'</div><div class="meta">'+esc([x.producer,x.region].filter(Boolean).join(' · '))+(x.qty!=null?' · Vivino: '+x.qty+' fl.':'')+'</div>'+
       '<select data-vp="'+i+'" style="margin-top:4px" aria-label="Kobling">'+it.cands.map(function(c){var w=byId(c.id);return '<option value="'+esc(c.id)+'"'+(it.pick===c.id?' selected':'')+'>Kobles til: '+esc(w.name+' '+(w.vintage||'uten årgang'))+(w.bought?', kjøpt '+esc(fdate(w.bought)):'')+(w.vmp?', varenr. '+esc(w.vmp):'')+' ('+esc(w.qty)+' fl. nå)</option>'}).join('')+'<option value="__new__"'+(it.pick==='__new__'?' selected':'')+'>Ny vin</option><option value=""'+(it.pick===''?' selected':'')+'>Hopp over</option></select></div>';
    }).join('')+'</div>'+
    (v.plan.length>40?'<div class="actions" style="margin-top:6px"><button class="btn ghost small" data-act="vivMore">'+(v.showAll?'Vis færre':'Vis alle '+v.plan.length)+'</button></div>':'')+
@@ -1254,6 +1260,8 @@ function inferType(w){
   return '';
 }
 function ptsVal(w){var v=[];if(w.score!==''&&w.score!=null&&!isNaN(+w.score))v.push(+w.score);(w.ratings||[]).forEach(function(x){v.push(n100(x))});return v.length?Math.max.apply(null,v):null}
+function wineLoc(w){return String(w.location||'').trim()||'(uten sted)'}
+function selLocs(){var r=ui.rk;return Object.keys(r.locs||{}).filter(function(k){return r.locs[k]})}
 function regionKey(w){return String(w.region||'').split(',')[0].trim()}
 function foodMatch(w,q){var nq=normS(q);if(!nq)return false;return (w.food||[]).some(function(t){var n=normS(t);return n&&(n.indexOf(nq)>=0||nq.indexOf(n)>=0)})}
 function rankInfo(w,q){
@@ -1275,6 +1283,7 @@ function rankList(){
     if(r.stock&&!(w.qty>0))return;
     if(r.type&&w.type!==r.type)return;
     if(r.region&&regionKey(w)!==r.region)return;
+    var sl=selLocs();if(sl.length&&sl.indexOf(wineLoc(w))<0)return;
     var i=rankInfo(w,q);
     if(!r.wait&&i.st.k==='wait')return;
     if(q&&r.only&&!i.F)return;
@@ -1297,7 +1306,13 @@ function vRang(){
   var r=ui.rk,types=uniq(db.wines.map(function(w){return w.type})),regions=uniq(db.wines.map(regionKey)),foods=uniq([].concat.apply([],db.wines.map(function(w){return w.food||[]})));
   var res=rankList(),untyped=db.wines.filter(function(w){return !w.type&&!w.example}).length;
   var SORTS=[['samlet','Samlet (poeng, drikkevindu og mat)'],['poeng','Poeng (høyest først)'],['vindu','Drikkevindu (haster mest først)'],['region','Region'],['type','Type'],['mat','Matpassing']];
-  var h='<h2>Rangering</h2><div class="tools"><div><label for="rk_type">Type</label><select id="rk_type">'+opts(types,r.type,'Alle typer')+'</select></div>'+
+  var locMap={};db.wines.forEach(function(w){if(w.example||(r.stock&&!(w.qty>0)))return;var k=wineLoc(w);locMap[k]=(locMap[k]||0)+(+w.qty||0)});
+  var locKeys=Object.keys(locMap).sort(function(a,b){if(a==='(uten sted)')return 1;if(b==='(uten sted)')return -1;return a.localeCompare(b,'nb')}),sl=selLocs();
+  var locHtml='<details class="panel" style="margin:0 0 10px"'+(sl.length?' open':'')+'><summary style="cursor:pointer;font-weight:600">Sted: '+(sl.length?esc(sl.length===1?sl[0]:sl.length+' valgt'):'alle')+'</summary><div style="margin-top:8px;max-height:260px;overflow:auto">'+
+    locKeys.map(function(k){return '<label class="chk" style="padding:3px 0"><input type="checkbox" data-rl="'+esc(k)+'"'+(r.locs&&r.locs[k]?' checked':'')+'> <span>'+esc(k)+' <span class="meta">'+locMap[k]+' fl.</span></span></label>'}).join('')+'</div>'+
+    '<div class="actions" style="margin-top:8px"><button class="btn ghost small" data-act="rkLocAll">Alle steder</button></div>'+
+    '<label class="chk" style="margin-top:8px"><input type="checkbox" id="rk_group"'+(r.group?' checked':'')+'> Rangér hvert sted for seg</label></details>';
+  var h='<h2>Rangering</h2>'+locHtml+'<div class="tools"><div><label for="rk_type">Type</label><select id="rk_type">'+opts(types,r.type,'Alle typer')+'</select></div>'+
    '<div><label for="rk_region">Region</label><select id="rk_region">'+opts(regions,r.region,'Alle regioner')+'</select></div>'+
    '<div><label for="rk_food">Passer til (fra vinene dine)</label><select id="rk_food">'+opts(foods,r.food,'Velg rett')+'</select></div>'+
    '<div><label for="rk_text">Eller skriv selv, f.eks. lam</label><input id="rk_text" value="'+esc(r.text)+'"></div>'+
@@ -1310,14 +1325,19 @@ function vRang(){
   }
   if(untyped)h+='<div class="banner" style="margin-top:10px"><span>'+untyped+' viner mangler type.</span><button class="btn ghost small" data-act="guessTypes">Gjett type fra navn og druer</button></div>';
   if(!res.rows.length)return h+'<div class="empty">Ingen viner passer. Slå av et filter eller ta med viner som ikke er klare.</div>';
-  h+='<div class="list" style="margin-top:12px">'+res.rows.map(function(x,n){
+  var rowH=function(x,n){
     var i=x.i,p=[(n+1)+'.'];
     if(r.sort==='samlet')p.push('samlet '+i.comp);
     p.push(i.pv==null?'uten poeng':'poeng '+Math.round(i.pv));
     p.push(i.st.k==='now'?'drikk nå'+(x.w.to?' til '+x.w.to:''):(i.st.k==='over'?'over toppen':(i.st.k==='wait'?'lagres til '+x.w.from:'uten vindu')));
     if(res.q)p.push(i.F?'passer til '+res.q:'passer ikke oppgitt rett');
     return wineRow(x.w,'<div class="meta mono">'+esc(p.join(' · '))+'</div>');
-  }).join('')+'</div>';
+  };
+  if(r.group){
+    var gm={},go=[];res.rows.forEach(function(x){var k=wineLoc(x.w);if(!gm[k]){gm[k]=[];go.push(k)}gm[k].push(x)});
+    go.sort(function(a,b){if(a==='(uten sted)')return 1;if(b==='(uten sted)')return -1;return a.localeCompare(b,'nb')});
+    h+=go.map(function(k){var rows=gm[k],nb=rows.reduce(function(a,x){return a+(+x.w.qty||0)},0);return '<h3 style="margin:18px 0 6px;font-size:16px">'+esc(k)+' <span class="meta">'+rows.length+(rows.length===1?' vin':' viner')+' · '+nb+' fl.</span></h3><div class="list">'+rows.map(rowH).join('')+'</div>'}).join('');
+  }else h+='<div class="list" style="margin-top:12px">'+res.rows.map(rowH).join('')+'</div>';
   return h;
 }
 function typeSel(id,cur,all){return '<div><label for="'+id+'">Type</label><select id="'+id+'"><option value="">'+all+'</option>'+TYPES.map(function(t){return '<option'+(cur===t?' selected':'')+'>'+t+'</option>'}).join('')+'</select></div>'}
