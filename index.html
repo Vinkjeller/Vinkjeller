@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#8a1c3b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238a1c3b'/%3E%3Cpath d='M11 5h10v6c0 4-2 6-5 6s-5-2-5-6zM16 17v8M11 27h10' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -202,7 +204,7 @@ function vKjeller(){
   var h='<div class="tools"><div class="full" style="display:flex;gap:8px"><input id="q" type="search" placeholder="Søk i navn, produsent, druer, sted, varenummer" value="'+esc(ui.q)+'" aria-label="Søk"><label class="btn ghost" style="margin:0;display:inline-flex;align-items:center;cursor:pointer;font-size:15px;color:var(--fg)">Skann<input id="g_scan" type="file" accept="image/*" capture="environment" hidden></label></div>'+
    '<div><label for="fc">Land</label><select id="fc"><option value="">Alle</option>'+countries.map(function(c){return '<option'+(ui.country===c?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select></div>'+
    '<div><label for="fs">Drikkevindu</label><select id="fs">'+[['','Alle'],['now','Drikk nå'],['over','Over toppen'],['wait','Lagres'],['none','Uten vindu']].map(function(o){return '<option value="'+o[0]+'"'+(ui.status===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
-   '<div><label for="fo">Sorter</label><select id="fo">'+[['navn','Navn'],['aargang','Årgang (nyest)'],['vindu','Drikkevindu (slutter først)'],['pris','Pris (høyest)'],['ext','Ekstern score (høyest)'],['sted','Sted'],['nyest','Sist lagt til']].map(function(o){return '<option value="'+o[0]+'"'+(ui.sort===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
+   '<div><label for="fo">Sorter</label><select id="fo">'+[['navn','Navn'],['aargang','Årgang (nyest)'],['vindu','Drikkevindu (slutter først)'],['pris','Pris (høyest)'],['ext','Poeng (høyest)'],['sted','Sted'],['nyest','Sist lagt til']].map(function(o){return '<option value="'+o[0]+'"'+(ui.sort===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
    '<div style="display:flex;align-items:end;gap:10px;justify-content:space-between"><label class="chk"><input type="checkbox" id="fe"'+(ui.empty?' checked':'')+'> Vis tomme</label><span style="display:flex;gap:6px"><button class="btn ghost" data-act="selmode">Velg flere</button><button class="btn" data-act="add">Ny vin</button></span></div></div>';
   if(!list.length) h+='<div class="empty">Ingen viner passer. Endre søket eller legg til en vin med «Ny vin».</div>';
   else h+='<div class="list">'+list.map(function(w){return wineRow(w)}).join('')+'</div>';
@@ -312,6 +314,9 @@ document.addEventListener('click',function(e){
   else if(a==='missStop'){ui.pr.target='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missAll'){ui.missAll=!ui.missAll;render()}
   else if(a==='rcpClear'){ui.imp=[];render()}
+  else if(a==='vkRead'){vkLoad(val('vk_text'))}
+  else if(a==='vkApply'){vkApply()}
+  else if(a==='vkClear'){ui.vk=null;render()}
   else if(a==='vivRead'){vivLoad(val('viv_text'),'innlimt tekst')}
   else if(a==='vivPlanGo'){vivPlanGo()}
   else if(a==='vivApply'){vivApply()}
@@ -322,6 +327,7 @@ document.addEventListener('click',function(e){
   else if(a==='vivClear'){ui.viv=null;render()}
   else if(a==='prAdd'){addProps()}
   else if(a==='addRating'&&w){addRating(w)}
+  else if(a==='ratPaste'&&w){pasteRating(w)}
   else if(a==='delRating'&&w){(w.ratings||[]).splice(+t.dataset.i,1);save();render()}
   else if(a==='guessTypes'){var gn=0;db.wines.forEach(function(x){if(!x.type&&!x.example){var g=inferType(x);if(g){x.type=g;gn++}}});save();render();toast(gn+' viner fikk type. Resten må du velge selv.')}
   else if(a==='fromText'){ui.sheet=null;ui.tab='poeng';render();var pt=document.getElementById('pr_text');if(pt)pt.focus()}
@@ -361,6 +367,7 @@ document.addEventListener('change',function(e){
   if(id==='fc'){ui.country=e.target.value;render()} else if(id==='fs'){ui.status=e.target.value;render()}
   else if(id==='fo'){ui.sort=e.target.value;render()} else if(id==='fe'){ui.empty=e.target.checked;render()}
   else if(id==='rcpt'&&e.target.files.length){readReceipts(Array.prototype.slice.call(e.target.files))}
+  else if(ds.vk!==undefined){ui.vk.items[+ds.vk].pick=e.target.value;render();window.scrollTo(0,sy)}
   else if(ds.vm){ui.viv.map[ds.vm]=e.target.value;render();window.scrollTo(0,sy)}
   else if(ds.vp!==undefined){ui.viv.plan[+ds.vp].pick=e.target.value;render();window.scrollTo(0,sy)}
   else if(ds.lv){ui.vivLeft.off[ds.lv]=!e.target.checked}
@@ -465,7 +472,7 @@ function addReceipts(){
   });
   save();ui.imp=[];ui.tab='kjeller';ui.sort='nyest';render();toast(nb+' flasker lagt til ('+nw+' nye viner)');
 }
-function vImport(){return vImportRcp()+vVivino()}
+function vImport(){return vImportRcp()+vVk()+vVivino()}
 function vImportRcp(){
   var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet. Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
    '<label for="rcpt">PDF-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf" multiple>';
@@ -883,7 +890,7 @@ function addProps(){
       if(r.meta&&r.meta.note)e.note=r.meta.note;if(r.meta&&r.meta.reviewer)e.reviewer=r.meta.reviewer;
       w.ratings.push(e);n++;
     }
-    if((ui.pr.details||r.pick==='__new__')&&r.meta){detailPlan(w,r.meta).forEach(function(x){if(x[0]==='food')w.food=x[1].slice();else w[x[0]]=x[1]});d++}
+    if((ui.pr.details||r.pick==='__new__')&&r.meta){detailPlan(w,r.meta).forEach(function(x){if(x[0]==='food')w.food=x[1].slice();else w[x[0]]=x[1]});d++;if(r.meta.src==='Vinmonopolet'&&!w.vintage&&!r.meta.vintage)w.noVintage=true}
   });
   save();ui.pr.props=[];ui.pr.done=false;ui.pr.text='';ui.pr.url='';if(eanUsed)ui.pr.ean='';if(tg0){ui.pr.target=missNext(tg0,[tg0],order0)}render();toast((created?created+' nye viner, ':'')+n+' vurderinger lagt til'+(d?' med detaljer':''));
 }
@@ -944,9 +951,9 @@ function vivLoad(text,name){
 function vivGet(row,map,k){var i=map[k];if(i===''||i==null)return '';return String(row[+i]==null?'':row[+i]).trim()}
 function vivWine(row,map){
   var g=function(k){return vivGet(row,map,k)},name=g('name');if(!name)return null;
-  var vint=(g('vintage').match(/(19|20)\d{2}/)||[''])[0],cn=g('country'),ty=g('type'),T='';
+  var vint=(g('vintage').match(/(19|20)\d{2}/)||[''])[0],isnv=!vint&&/^\s*(n\.?v\.?|nv|u\.?v\.?)\s*$/i.test(g('vintage')),cn=g('country'),ty=g('type'),T='';
   if(/spark|champ|musser|bubbl/i.test(ty))T='Musserende';else if(/ros[eé]/i.test(ty))T='Rosé';else if(/red|rød/i.test(ty))T='Rød';else if(/white|hvit/i.test(ty))T='Hvit';else if(/dessert|sweet|søt/i.test(ty))T='Dessert';else if(/fort|port|sherry/i.test(ty))T='Sterkvin';
-  var w={name:name,producer:g('producer'),vintage:vint,country:COUNTRY_NO[cn.toLowerCase()]||cn,region:g('region'),type:T,price:'',note:g('note')};
+  var w={nv:isnv,name:name,producer:g('producer'),vintage:vint,country:COUNTRY_NO[cn.toLowerCase()]||cn,region:g('region'),type:T,price:'',note:g('note')};
   var pr=pnum(g('price').replace(/[^\d.,\s]/g,''));w.price=isNaN(pr)?'':pr;
   var rt=parseFloat(g('rating').replace(',','.'));w.rating=isNaN(rt)||rt<=0?null:rt;
   var q=parseInt(g('qty'),10);w.qty=isNaN(q)?null:q;
@@ -958,7 +965,13 @@ function vivResolve(plan){
   var taken={},out=[];
   plan.forEach(function(it){
     if(it.pick==='')return;
-    var t=null;if(it.pick!=='__new__'&&byId(it.pick)&&!taken[it.pick]){t=it.pick;taken[t]=1}
+    var t=null;
+    if(it.pick!=='__new__'&&byId(it.pick)&&!taken[it.pick]){t=it.pick;taken[t]=1}
+    else if(it.pick!=='__new__'&&it.cands.length){
+      var cur=it.cands.filter(function(c){return c.id===it.pick})[0],r0=cur?cur.ratio:it.cands[0].ratio;
+      var alt=it.cands.filter(function(c){return !taken[c.id]&&byId(c.id)&&c.ratio>=r0-0.05&&!byId(c.id).vintage})[0];
+      if(alt){t=alt.id;taken[t]=1;it.pick=alt.id}
+    }
     out.push({x:it.x,tgt:t});
   });
   return {out:out,taken:taken};
@@ -993,6 +1006,7 @@ function vivApply(){
       w.ratings=w.ratings||[];var rm=x.rating<=5?5:100;
       if(!w.ratings.some(function(q){return q.src==='Vivino'&&q.score===x.rating&&q.max===rm}))w.ratings.push({src:'Vivino',score:x.rating,max:rm,url:'',date:today()});
     }
+    if(x.nv&&!w.vintage)w.noVintage=true;
     delete w.example;touched[w.id]=1;
   });
   var left=db.wines.filter(function(w){return !w.example&&!touched[w.id]&&(+w.qty||0)>0});
@@ -1045,15 +1059,88 @@ function vVivPlan(v){
    shown.map(function(it){
      var i=v.plan.indexOf(it),x=it.x;
      return '<div class="logrow"><div class="name">'+esc(x.name+' '+(x.vintage||'NV'))+'</div><div class="meta">'+esc([x.producer,x.region].filter(Boolean).join(' · '))+(x.qty!=null?' · Vivino: '+x.qty+' fl.':'')+'</div>'+
-      '<select data-vp="'+i+'" style="margin-top:4px" aria-label="Kobling">'+it.cands.map(function(c){var w=byId(c.id);return '<option value="'+esc(c.id)+'"'+(it.pick===c.id?' selected':'')+'>Kobles til: '+esc(w.name+' '+(w.vintage||'NV'))+' ('+esc(w.qty)+' fl. nå)</option>'}).join('')+'<option value="__new__"'+(it.pick==='__new__'?' selected':'')+'>Ny vin</option><option value=""'+(it.pick===''?' selected':'')+'>Hopp over</option></select></div>';
+      '<select data-vp="'+i+'" style="margin-top:4px" aria-label="Kobling">'+it.cands.map(function(c){var w=byId(c.id);return '<option value="'+esc(c.id)+'"'+(it.pick===c.id?' selected':'')+'>Kobles til: '+esc(w.name+' '+(w.vintage||'uten årgang'))+(w.bought?', kjøpt '+esc(fdate(w.bought)):'')+(w.vmp?', varenr. '+esc(w.vmp):'')+' ('+esc(w.qty)+' fl. nå)</option>'}).join('')+'<option value="__new__"'+(it.pick==='__new__'?' selected':'')+'>Ny vin</option><option value=""'+(it.pick===''?' selected':'')+'>Hopp over</option></select></div>';
    }).join('')+'</div>'+
    (v.plan.length>40?'<div class="actions" style="margin-top:6px"><button class="btn ghost small" data-act="vivMore">'+(v.showAll?'Vis færre':'Vis alle '+v.plan.length)+'</button></div>':'')+
    '<div class="actions"><button class="btn" data-act="vivApply">Utfør import</button><button class="btn ghost" data-act="vivBack">Endre kolonner</button><button class="btn ghost" data-act="vivClear">Avbryt</button></div><p class="meta">Etter importen får du se vinene som ikke er i Vivino, og velger om de skal settes til 0 flasker.</p></div>';
   return h;
 }
 
+/* ---------- årgang fra «Mine kjøp» på Vinmonopolet ---------- */
+function vkParse(text){
+  var L=String(text).split('\n').map(function(l){return l.trim()}),out=[],seen={};
+  for(var i=0;i<L.length;i++){
+    if(!/^Pris per enhet/i.test(L[i]))continue;
+    var j=i-1;while(j>=0&&!L[j])j--;
+    if(j<0)continue;
+    var name=L[j].replace(/^Bilde av\s+/i,'').trim();
+    if(!name||/^(Utlevert|Totalpris|Totalsum)/i.test(name))continue;
+    var vm=name.match(/\s((?:19|20)\d{2}|NV)$/i),vint=vm?(/nv/i.test(vm[1])?'NV':vm[1]):'',base=vm?name.slice(0,vm.index).trim():name;
+    var pm=L[i].match(/Kr\s*([\d\s.]*\d,\d{2})/),unit=pm?pnum(pm[1]):'',qty=1,volume='';
+    for(var k=i+1;k<Math.min(L.length,i+7);k++){var q=L[k].match(/(\d+)\s*stykk/i);if(q){qty=parseInt(q[1],10);break}}
+    for(var k2=i+1;k2<Math.min(L.length,i+7);k2++){var c=L[k2].match(/(\d+(?:,\d+)?)\s*cl\b/i);if(c){volume=c[1]+' cl';break}}
+    var key=normS(base)+'|'+vint;
+    if(seen[key]){seen[key].qty+=qty;continue}
+    var it={name:base,vintage:vint,unit:unit,qty:qty,volume:volume};seen[key]=it;out.push(it);
+  }
+  return out;
+}
+function vkLoad(text){
+  var items=vkParse(text);
+  if(!items.length){ui.vk=null;render();toast('Fant ingen kjøp i teksten');return}
+  items.forEach(function(it){
+    var c=matchWines(it.name+' '+(it.vintage&&it.vintage!=='NV'?it.vintage:''));
+    c.sort(function(a,b){var wa=byId(a.id),wb=byId(b.id);var d=b.ratio-a.ratio;if(Math.abs(d)>0.001)return d;var pa=Math.abs((+wa.price||0)-(+it.unit||0)),pb=Math.abs((+wb.price||0)-(+it.unit||0));return pa-pb});
+    it.cands=c;it.pick=c.length?c[0].id:'';
+  });
+  ui.vk={items:items};render();
+}
+function vkResolve(items){
+  var taken={},out=[];
+  items.forEach(function(it){
+    if(!it.pick)return;
+    if(it.pick==='__new__'){out.push({it:it,tgt:null});return}
+    var t=null;
+    if(byId(it.pick)&&!taken[it.pick])t=it.pick;
+    else{var alt=it.cands.filter(function(c){return !taken[c.id]&&byId(c.id)&&!byId(c.id).vintage})[0];if(alt){t=alt.id;it.pick=alt.id}}
+    if(t){taken[t]=1;out.push({it:it,tgt:t})}else it.pick='';
+  });
+  return out;
+}
+function vkApply(){
+  var v=ui.vk;if(!v)return;
+  var out=vkResolve(v.items),upd=0,add=0;
+  out.forEach(function(o){
+    var it=o.it,w=o.tgt?byId(o.tgt):null;
+    if(w){
+      if(!w.vintage){if(it.vintage==='NV')w.noVintage=true;else if(it.vintage){w.vintage=it.vintage;upd++}}
+      if((w.price===''||w.price==null)&&it.unit!=='')w.price=it.unit;
+      if(!w.volume&&it.volume)w.volume=it.volume;
+    }else{
+      w={id:uid(),name:it.name,producer:'',vintage:it.vintage==='NV'?'':it.vintage,country:'',region:'',grape:'',qty:it.qty,price:it.unit,nowPrice:'',location:'',from:'',to:'',score:'',notes:'',vmp:'',ean:'',type:inferType({name:it.name,producer:'',grape:''}),ratings:[],volume:it.volume,added:Date.now()};
+      if(it.vintage==='NV')w.noVintage=true;
+      db.wines.push(w);add++;
+    }
+    delete w.example;
+  });
+  db.wines=db.wines.filter(function(w){return !w.example});
+  save();ui.vk=null;render();toast(upd+' viner fikk årgang'+(add?', '+add+' nye viner':''));
+}
+function vVk(){
+  var v=ui.vk,h='<hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h2>Hent årgang fra Vinmonopolet-kjøp</h2><p class="meta">Ordrebekreftelsene mangler årgang, men «Mine kjøp» på vinmonopolet.no har den. Åpne siden, marker og kopier teksten med vinene, og lim den inn her. Appen kobler hvert kjøp til en vin du har og fyller inn årgangen. Du bekrefter før noe lagres.</p>'+
+   '<label for="vk_text">Tekst fra «Mine kjøp»</label><textarea id="vk_text" style="min-height:90px"></textarea><div class="actions"><button class="btn" data-act="vkRead">Finn treff</button></div>';
+  if(!v)return h;
+  var out=vkResolve(v.items),nm=out.filter(function(o){return o.tgt}).length,nn=out.length-nm,sk=v.items.length-out.length;
+  h+='<div class="panel"><div class="meta" style="margin-bottom:8px">'+v.items.length+' kjøp funnet. '+nm+' kobles til vin du har fra før'+(nn?', '+nn+' blir nye viner':'')+(sk?', '+sk+' hoppes over (ingen treff)':'')+'.</div><div class="list">'+
+   v.items.map(function(it,i){
+     return '<div class="logrow"><div class="name">'+esc(it.name+' '+(it.vintage||'uten årgang'))+'</div><div class="meta">'+it.qty+' stk'+(it.unit!==''?' · '+nok(it.unit)+' per flaske':'')+'</div>'+
+      '<select data-vk="'+i+'" style="margin-top:4px" aria-label="Kobling">'+it.cands.map(function(c){var w=byId(c.id);return '<option value="'+esc(c.id)+'"'+(it.pick===c.id?' selected':'')+'>Kobles til: '+esc(w.name+' '+(w.vintage||'uten årgang'))+(w.bought?', kjøpt '+esc(fdate(w.bought)):'')+(w.vmp?', varenr. '+esc(w.vmp):'')+'</option>'}).join('')+'<option value="__new__"'+(it.pick==='__new__'?' selected':'')+'>Ny vin</option><option value=""'+(it.pick===''?' selected':'')+'>Hopp over</option></select></div>';
+   }).join('')+'</div><div class="actions"><button class="btn" data-act="vkApply">Fyll inn årgang</button><button class="btn ghost" data-act="vkClear">Avbryt</button></div><p class="meta">Viner uten treff hoppes over. Velg «Ny vin» hvis du vil legge dem til. Antall flasker avgjøres av Vivino-importen.</p></div>';
+  return h;
+}
+
 /* ---------- viner som mangler detaljer ---------- */
-function missOf(w){var m=[];if(!w.country)m.push('land');if(!(w.food&&w.food.length))m.push('mat');if(!w.from&&!w.to)m.push('drikkevindu');return m}
+function missOf(w){var m=[];if(!w.vintage&&!w.noVintage)m.push('årgang');if(!w.country)m.push('land');if(!(w.food&&w.food.length))m.push('mat');if(!w.from&&!w.to)m.push('drikkevindu');return m}
 function missList(){return db.wines.filter(function(w){return !w.example&&w.qty>0&&missOf(w).length}).sort(function(a,b){return String(a.name).localeCompare(String(b.name),'nb')})}
 function missNext(cur,skip,order){
   var now=missList().map(function(x){return x.id}).filter(function(id){return skip.indexOf(id)<0});
@@ -1129,13 +1216,27 @@ function addRating(w){
   (w.ratings=w.ratings||[]).push({src:val('r_src')||'Ekstern',score:sc,max:mx,url:url,date:today()});
   save();render();toast('Vurdering lagt til');
 }
+function pasteRating(w){
+  var t=val('r_paste');if(!t.trim()){toast('Lim inn teksten først');return}
+  var props=buildProps(t,100);
+  if(!props.length){toast('Fant ingen vurdering i teksten');return}
+  var r=props.filter(function(p){return p.cands.some(function(c){return c.id===w.id})})[0]||props[0];
+  r.pick=w.id;r.on=true;
+  var d0=ui.pr.details,s0=ui.pr.src,t0=ui.pr.target;
+  ui.pr.props=[r];ui.pr.details=true;ui.pr.src=val('r_psrc')||'DN';ui.pr.target='';ui.pr.url='';
+  addProps();
+  ui.pr.details=d0;ui.pr.src=s0;ui.pr.target=t0;
+}
 function ratingsPanel(w){
   var rs=w.ratings||[];
   return '<div class="panel"><h2 style="font-size:15px">Eksterne vurderinger</h2>'+
    (rs.length?rs.map(function(r,i){return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:4px 0"><span style="min-width:0;overflow-wrap:anywhere"><span class="score">'+esc(rlabel(r))+'</span> <span class="meta">'+esc(fdate(r.date||''))+'</span>'+(r.url?' <a href="'+esc(r.url)+'" target="_blank" rel="noopener">Lenke</a>':'')+'</span><button class="btn ghost small" data-act="delRating" data-i="'+i+'" aria-label="Fjern vurdering">Fjern</button></div>'+(r.note?'<div class="note meta" style="margin:0 0 8px">'+esc(r.note)+(r.reviewer?' \u2013 '+esc(r.reviewer):'')+'</div>':'')}).join(''):'<div class="meta">Ingen ennå.</div>')+
    '<div class="grid2" style="margin-top:8px"><div><label for="r_src">Kilde</label><input id="r_src" value="DN"></div><div><label for="r_score">Poeng</label><input id="r_score" inputmode="decimal"></div>'+
    '<div><label for="r_max">Skala</label><select id="r_max"><option>100</option><option>20</option><option>6</option><option>5</option></select></div><div><label for="r_url">Lenke (valgfri)</label><input id="r_url" inputmode="url"></div></div>'+
-   '<div class="actions"><button class="btn ghost small" data-act="addRating">Legg til vurdering</button></div></div>';
+   '<div class="actions"><button class="btn ghost small" data-act="addRating">Legg til vurdering</button></div>'+
+   '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Lim inn fra DN, Vivino eller Vinmonopolet</summary><p class="meta" style="margin:6px 0">Kopier teksten om vinen og lim den inn. Appen finner poeng, drikkevindu, mat og andre detaljer, og fyller bare inn felt som er tomme.</p>'+
+   '<div class="grid2"><div><label for="r_psrc">Kilde</label><input id="r_psrc" value="DN"></div><div class="full"><label for="r_paste">Tekst</label><textarea id="r_paste" style="min-height:110px"></textarea></div></div>'+
+   '<div class="actions"><button class="btn small" data-act="ratPaste">Legg til fra tekst</button></div></details></div>';
 }
 
 /* ---------- rangering: poeng, drikkevindu, region, type og mat ---------- */
@@ -1359,6 +1460,7 @@ function scanFind(file){
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&ui.sheet){ui.sheet=null;renderSheet()}});
 
 load(); render(); initSync();
+try{if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(function(){})}catch(e){}
 })();
 </script>
 </body>
