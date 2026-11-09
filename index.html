@@ -21,6 +21,10 @@
   --body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
 }
+.wbar{position:relative;height:6px;border-radius:3px;background:var(--line);margin:7px 0 3px;overflow:hidden}
+.wbar i{position:absolute;left:0;top:0;bottom:0;background:var(--ok)}
+.wbar.end i{background:var(--warn)}.wbar.over i{background:var(--bad)}.wbar.wait i{display:none}
+.wbar b{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);transform:translateX(-1px)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#13161a; --surface:#1b1f25; --fg:#e8ebee; --muted:#97a1ab; --line:#2b313a;
   --accent:#e0708f; --accent-fg:#1a0a10; --ok:#5fbf86; --warn:#e0a33c; --bad:#f0786f; color-scheme:dark}}
@@ -145,8 +149,29 @@ function status(w){
   if(f===''&&t==='')return {k:'none',t:'Uten vindu',c:'mute'};
   if(t!==''&&YEAR>t)return {k:'over',t:'Over toppen',c:'bad'};
   if(f!==''&&YEAR<f)return {k:'wait',t:'Lagres til '+f,c:'mute'};
+  if(t!==''&&t-YEAR<=2)return {k:'now',t:'Drikk snart',c:'warn'};
   return {k:'now',t:'Drikk nå',c:'ok'};
 }
+function winInfo(w){
+  var f=num(w.from),t=num(w.to);if(f===''||t==='')return null;
+  var span=Math.max(1,t-f),pos=Math.max(0,Math.min(1,(YEAR-f)/span)),left=t-YEAR,ph;
+  if(left<0)ph='over';else if(YEAR<f)ph='wait';else if(left<=2)ph='end';else if(pos<1/3)ph='early';else ph='mid';
+  return {f:f,t:t,pos:pos,left:left,ph:ph};
+}
+function leftTxt(w){
+  var f=num(w.from),t=num(w.to);
+  if(t!==''&&YEAR>t)return 'over toppen siden '+t;
+  if(f!==''&&YEAR<f)return f-YEAR===1?'klar neste år':'klar om '+(f-YEAR)+' år';
+  if(t==='')return '';
+  var l=t-YEAR;return l===0?'siste år':(l===1?'1 år igjen':l+' år igjen');
+}
+function winBar(w){
+  var i=winInfo(w),lt=leftTxt(w),f=num(w.from),t=num(w.to);
+  if(i)return '<div class="wbar '+i.ph+'" role="img" aria-label="Drikkevindu '+i.f+' til '+i.t+(lt?', '+lt:'')+'"><i style="width:'+Math.round(i.pos*100)+'%"></i><b style="left:'+Math.round(i.pos*100)+'%"></b></div><div class="meta mono">'+i.f+'\u2013'+i.t+(lt?' \u00b7 '+lt:'')+'</div>';
+  if(t!==''||f!=='')return '<div class="meta mono">'+(t!==''?'til '+t:'fra '+f)+(lt?' \u00b7 '+lt:'')+'</div>';
+  return '';
+}
+function phaseOf(w){var i=winInfo(w);if(i)return i.ph;var t=num(w.to);if(t==='')return 'open';return t-YEAR<=2?'end':'mid'}
 function toast(m){var h=document.getElementById('toastHost');h.innerHTML='<div class="toast" role="status">'+esc(m)+'</div>';setTimeout(function(){h.innerHTML=''},2200)}
 function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fdate(s){if(!s)return 'ukjent dato';try{return new Date(s+'T12:00').toLocaleDateString('nb-NO',{day:'numeric',month:'short',year:'numeric'})}catch(e){return s}}
@@ -177,7 +202,7 @@ function wineRow(w,extra){
   return '<button class="row'+(pk?' picked':'')+'" '+(sel?'data-sel="':'data-open="')+w.id+'"><div class="qty'+(w.qty>0?'':' zero')+'">'+esc(w.qty)+'</div>'+
    '<div><div class="name">'+(pk?'\u2713 ':'')+esc(w.name)+' '+(w.vintage?esc(w.vintage):'NV')+(w.example?'<span class="ex">eksempel</span>':'')+'</div>'+
    '<div class="meta">'+esc([w.type,w.producer,w.region,w.country].filter(Boolean).join(' · '))+'</div>'+
-   ((w.site||w.location)?'<div class="meta">Lagring: '+esc([w.site,w.location].filter(Boolean).join(' · '))+'</div>':'')+(extra||'')+'</div>'+
+   ((w.site||w.location)?'<div class="meta">Lagring: '+esc([w.site,w.location].filter(Boolean).join(' · '))+'</div>':'')+winBar(w)+(extra||'')+'</div>'+
    '<div class="right"><span class="price">'+nok(num(w.price))+'</span><span class="chip '+s.c+'">'+esc(s.t)+'</span>'+(w.score!==''?'<span class="score">'+esc(w.score)+' p</span>':'')+(bestRating(w)?'<span class="score" style="color:var(--muted)">'+esc(rlabel(bestRating(w)))+'</span>':'')+'</div></button>';
 }
 function filtered(){
@@ -217,10 +242,17 @@ function vKjeller(){
   return h;
 }
 function vDrikk(){
-  var now=db.wines.filter(function(w){return w.qty>0&&status(w).k==='now'}).sort(function(a,b){return (num(a.to)||9999)-(num(b.to)||9999)});
+  var byTo=function(a,b){return (num(a.to)||9999)-(num(b.to)||9999)||String(a.name).localeCompare(String(b.name),'nb')};
   var over=db.wines.filter(function(w){return w.qty>0&&status(w).k==='over'}).sort(function(a,b){return (num(a.to)||0)-(num(b.to)||0)});
+  var now=db.wines.filter(function(w){return w.qty>0&&status(w).k==='now'}).sort(byTo);
+  var G=[['end','Slutten av vinduet','2 år eller mindre igjen. Drikk disse først.'],['mid','Midt i vinduet','På vei mot toppen, ingen hast.'],['early','Tidlig i vinduet','Klare, men kan gjerne ligge lenger.'],['open','Uten sluttår','Drikkevinduet har ingen slutt oppgitt.']];
   var h='<h2>Bør drikkes straks</h2>'+(over.length?'<div class="list">'+over.map(function(w){return wineRow(w)}).join('')+'</div>':'<div class="empty">Ingen flasker er over toppen.</div>');
-  h+='<h2 style="margin-top:22px">Klare nå, de som slutter først øverst</h2>'+(now.length?'<div class="list">'+now.map(function(w){return wineRow(w)}).join('')+'</div>':'<div class="empty">Ingen viner har et drikkevindu som omfatter '+YEAR+'. Fyll inn «Drikk fra» og «Drikk til» på vinene.</div>');
+  if(!now.length)return h+'<h2 style="margin-top:22px">Klare nå</h2><div class="empty">Ingen viner har et drikkevindu som omfatter '+YEAR+'. Fyll inn «Drikk fra» og «Drikk til» på vinene.</div>';
+  G.forEach(function(g){
+    var rows=now.filter(function(w){return phaseOf(w)===g[0]});if(!rows.length)return;
+    var nb=rows.reduce(function(a,w){return a+(+w.qty||0)},0);
+    h+='<h2 style="margin-top:22px">'+g[1]+' <span class="meta" style="font-weight:400">'+rows.length+(rows.length===1?' vin':' viner')+' · '+nb+' fl.</span></h2><div class="meta" style="margin:-6px 0 8px">'+g[2]+'</div><div class="list">'+rows.map(function(w){return wineRow(w)}).join('')+'</div>';
+  });
   return h;
 }
 function group(key){var m={}; db.wines.forEach(function(w){var k=key(w)||'Ukjent'; m[k]=(m[k]||0)+(+w.qty||0)}); return Object.keys(m).map(function(k){return [k,m[k]]}).filter(function(x){return x[1]>0}).sort(function(a,b){return b[1]-a[1]}).slice(0,8)}
@@ -1281,7 +1313,7 @@ function regionKey(w){return String(w.region||'').split(',')[0].trim()}
 function foodMatch(w,q){var nq=normS(q);if(!nq)return false;return (w.food||[]).some(function(t){var n=normS(t);return n&&(n.indexOf(nq)>=0||nq.indexOf(n)>=0)})}
 function rankInfo(w,q){
   var pv=ptsVal(w),P=pv==null?0.4:Math.max(0,Math.min(1,(pv-80)/20)),st=status(w),to=num(w.to),W;
-  if(st.k==='now'){var left=to===''?9:to-YEAR;W=left<=1?1:(left<=3?0.85:0.7)}
+  if(st.k==='now'){var wi=winInfo(w);W=to===''?0.6:(to-YEAR<=2?1:(wi?0.55+0.4*wi.pos:0.7))}
   else if(st.k==='over')W=0.5;else if(st.k==='none')W=0.3;else W=0;
   var F=q?(foodMatch(w,q)?1:0):null,wp=ui.rk.wp,ww=ui.rk.ww,wf=F===null?0:ui.rk.wf,den=wp+ww+wf;
   return {pv:pv,P:P,W:W,F:F,st:st,comp:den?Math.round((wp*P+ww*W+wf*(F||0))/den*100):0};
