@@ -488,17 +488,102 @@ function pdfLines(file){
     return p.then(function(){return all});
   });
 }
+/* Excel (.xlsx) uten bibliotek: leser zip + XML i nettleseren */
+function inflateRaw(u8){
+  if(!window.DecompressionStream)return Promise.reject(new Error('Nettleseren er for gammel til å lese Excel. Oppdater iPadOS/nettleseren, eller lagre filen som PDF.'));
+  var ds=new DecompressionStream('deflate-raw');
+  return new Response(new Blob([u8]).stream().pipeThrough(ds)).arrayBuffer().then(function(b){return new Uint8Array(b)});
+}
+function zipEntries(buf){
+  var v=new DataView(buf),u=new Uint8Array(buf),i=u.length-22,out={};
+  while(i>=0&&v.getUint32(i,true)!==0x06054b50)i--;
+  if(i<0)throw new Error('Ikke en gyldig Excel-fil');
+  var n=v.getUint16(i+10,true),p=v.getUint32(i+16,true);
+  for(var k=0;k<n;k++){
+    if(v.getUint32(p,true)!==0x02014b50)break;
+    var meth=v.getUint16(p+10,true),csz=v.getUint32(p+20,true),nl=v.getUint16(p+28,true),el=v.getUint16(p+30,true),cl=v.getUint16(p+32,true),off=v.getUint32(p+42,true);
+    var name=new TextDecoder().decode(u.subarray(p+46,p+46+nl));
+    var lnl=v.getUint16(off+26,true),lel=v.getUint16(off+28,true),st=off+30+lnl+lel;
+    out[name]={meth:meth,data:u.subarray(st,st+csz)};
+    p+=46+nl+el+cl;
+  }
+  return out;
+}
+function zipText(ent){
+  if(!ent)return Promise.resolve('');
+  var p=ent.meth===0?Promise.resolve(ent.data):inflateRaw(ent.data);
+  return p.then(function(b){return new TextDecoder('utf-8').decode(b)});
+}
+function xlsxRows(file){
+  return file.arrayBuffer().then(function(buf){
+    var z=zipEntries(buf),sn=Object.keys(z).filter(function(n){return /^xl\/worksheets\/sheet\d+\.xml$/.test(n)}).sort();
+    if(!sn.length)throw new Error('Fant ingen ark i filen');
+    return Promise.all([zipText(z['xl/sharedStrings.xml']),zipText(z[z['xl/worksheets/sheet1.xml']?'xl/worksheets/sheet1.xml':sn[0]])]);
+  }).then(function(t){
+    var P=new DOMParser(),ss=[];
+    if(t[0])Array.prototype.forEach.call(P.parseFromString(t[0],'application/xml').getElementsByTagName('si'),function(si){ss.push(Array.prototype.map.call(si.getElementsByTagName('t'),function(x){return x.textContent}).join(''))});
+    var rows=[];
+    Array.prototype.forEach.call(P.parseFromString(t[1],'application/xml').getElementsByTagName('row'),function(r){
+      var row=[];
+      Array.prototype.forEach.call(r.getElementsByTagName('c'),function(c){
+        var ref=c.getAttribute('r')||'',m=ref.match(/^([A-Z]+)/),col=0;
+        if(m)for(var q=0;q<m[1].length;q++)col=col*26+m[1].charCodeAt(q)-64;
+        col=col?col-1:row.length;
+        var ty=c.getAttribute('t'),ve=c.getElementsByTagName('v')[0],val=ve?ve.textContent:'';
+        if(ty==='s')val=ss[+val]||'';
+        else if(ty==='inlineStr')val=Array.prototype.map.call(c.getElementsByTagName('t'),function(x){return x.textContent}).join('');
+        else if(ty!=='str'&&ty!=='b'&&val!==''&&!isNaN(+val))val=+val;
+        row[col]=val;
+      });
+      rows.push(row);
+    });
+    return rows;
+  });
+}
+function xlDate(v){
+  if(typeof v==='number'){var d=new Date(Math.round((v-25569)*864e5));return d.toISOString().slice(0,10)}
+  var m=String(v).match(/(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];
+  m=String(v).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);return m?m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2):'';
+}
+function xlsxOrders(file){
+  return xlsxRows(file).then(function(rows){
+    var norm=function(x){return String(x==null?'':x).toLowerCase().replace(/[^a-zæøå0-9]/g,'')},hi=-1,C={};
+    for(var i=0;i<Math.min(rows.length,15)&&hi<0;i++){
+      var m={};(rows[i]||[]).forEach(function(c,j){m[norm(c)]=j});
+      if(m.salgsdokument!=null&&m.material!=null){hi=i;C=m}
+    }
+    if(hi<0)throw new Error('Kjenner ikke igjen kolonnene. Forventer «Salgsdokument», «Material», «Posisjonsbetegnelse», «Antall», «Totalbeløp».');
+    var col=function(keys){for(var k=0;k<keys.length;k++)for(var n in C)if(n.indexOf(keys[k])===0)return C[n];return -1};
+    var cN=col(['posisjonsbetegnelse','betegnelse']),cA=col(['antall']),cT=col(['totalbel','belop']),cD=col(['sesjon','dato']),orders={},list=[];
+    rows.slice(hi+1).forEach(function(r){
+      var ord=String(r[C.salgsdokument]==null?'':r[C.salgsdokument]).trim(),art=String(r[C.material]==null?'':r[C.material]).trim().replace(/\.0$/,'');
+      if(!ord||!/^\d{4,9}$/.test(art))return;
+      var q=Math.round(+r[cA])||0,tot=+r[cT]||0;if(q<=0)return;
+      var o=orders[ord];
+      if(!o){o=orders[ord]={order:ord,date:xlDate(r[cD]),lines:[],sum:null,file:file.name};list.push(o)}
+      o.lines.push({art:art,vmp:art,name:String(r[cN]||'').trim(),qty:q,unit:Math.round(tot/q*100)/100,total:tot});
+    });
+    return list;
+  });
+}
 function readReceipts(files){
   ui.imp=ui.imp||[];ui.impBusy='Leser '+files.length+' fil(er)…';render();
-  var p=Promise.resolve();
-  Array.prototype.forEach.call(files,function(f){p=p.then(function(){return pdfLines(f)}).then(function(lines){
-    var o=parseReceiptLines(lines);o.file=f.name;
+  var fin=function(o){
     var dupDb=!!(o.order&&(db.imports||[]).some(function(x){return x.order===o.order})),dupBatch=!!(o.order&&ui.imp.some(function(x){return !x.error&&x.order===o.order}));
     o.dup=dupDb||dupBatch;o.dupWhy=dupDb?'Allerede importert':(dupBatch?'Samme ordre er allerede valgt':'');
     var s=o.lines.reduce(function(a,l){return a+l.total},0);
     o.check=(o.sum==null)?'':(Math.abs(s-o.sum)<0.5?'ok':'avvik');
     ui.imp.push(o);
-  },function(){ui.imp.push({file:f.name,error:true,lines:[]})})});
+  };
+  var p=Promise.resolve();
+  Array.prototype.forEach.call(files,function(f){
+    if(/\.xlsx$/i.test(f.name)||/spreadsheetml/.test(f.type)){
+      p=p.then(function(){return xlsxOrders(f)}).then(function(list){
+        if(!list.length)ui.imp.push({file:f.name,error:true,lines:[]});
+        list.forEach(fin);
+      },function(e){ui.imp.push({file:f.name,error:true,lines:[],msg:e&&e.message})});
+    }else p=p.then(function(){return pdfLines(f)}).then(function(lines){var o=parseReceiptLines(lines);o.file=f.name;fin(o)},function(){ui.imp.push({file:f.name,error:true,lines:[]})});
+  });
   p.then(function(){ui.impBusy='';render()},function(){ui.impBusy='';render()});
 }
 function addReceipts(){
@@ -517,13 +602,13 @@ function addReceipts(){
 }
 function vImport(){return '<div class="panel" style="margin-top:0"><label for="def_site">Lagringssted for nye viner du importerer</label><input id="def_site" list="sitelist" placeholder="f.eks. Hjemme" value="'+esc(defSite())+'" autocomplete="off">'+siteDl()+'<div class="meta" style="margin-top:4px">Brukes på alle nye viner fra kvitteringer, Vivino og innliming. Du kan endre det senere.</div></div>'+vImportRcp()+vVk()+vVivino()}
 function vImportRcp(){
-  var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet. Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
-   '<label for="rcpt">PDF-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf" multiple>';
+  var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet, eller Excel-filen du får når du ber om kjøpshistorikken (.xlsx, grupperes per ordre). Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
+   '<label for="rcpt">PDF- eller Excel-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>';
   if(ui.impBusy)h+='<p class="meta" role="status">'+esc(ui.impBusy)+'</p>';
   var ok=0,tb=0,ts=0;
   ui.imp.forEach(function(o){
     h+='<div class="panel"><div class="name">'+esc(o.file||'')+'</div>';
-    if(o.error||!o.lines.length){h+='<div class="meta">Fant ingen varelinjer. Er dette en ordrebekreftelse fra Vinmonopolet?</div></div>';return}
+    if(o.error||!o.lines.length){h+='<div class="meta">'+esc(o.msg||'Fant ingen varelinjer. Er dette en ordrebekreftelse fra Vinmonopolet?')+'</div></div>';return}
     h+='<div class="meta">Ordre '+esc(o.order)+' · '+esc(o.date?fdate(o.date):'')+'</div>';
     if(o.dup)h+='<div class="chip warn" style="display:inline-block;margin:6px 0">'+esc(o.dupWhy||'Allerede importert')+'</div>';
     else{ok++;tb+=o.lines.reduce(function(a,l){return a+l.qty},0);ts+=o.sum||0}
