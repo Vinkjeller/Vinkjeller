@@ -355,6 +355,7 @@ document.addEventListener('click',function(e){
   else if(a==='hideSiteBanner'){ui.siteBanner=true;render()}
   else if(a==='rkLocAll'){ui.rk.locs={};render()}
   else if(a==='rcpClear'){ui.imp=[];render()}
+  else if(a==='fillVint'){fillVintages()}
   else if(a==='vkRead'){vkLoad(val('vk_text'))}
   else if(a==='vkApply'){vkApply()}
   else if(a==='vkClear'){ui.vk=null;render()}
@@ -452,6 +453,15 @@ function doImport(text){
   p.then(function(){ui.importMsg='Gjenopprettet '+db.wines.length+' viner og '+ks.length+' bilder.';render()});
 }
 /* ---------- kvitteringsimport (Vinmonopolet ordrebekreftelse, PDF) ---------- */
+function yearIn(t){
+  var re=/(^|[^\d.,])((?:19|20)\d{2})(?![\d])/g,m,y='';
+  while((m=re.exec(String(t||'')))){var n=+m[2];if(n<=YEAR)y=m[2]}
+  return y;
+}
+function fillVintages(){
+  var n=0;db.wines.forEach(function(w){if(w.example||String(w.vintage||'').trim())return;var y=yearIn(w.name);if(y){w.vintage=y;n++}});
+  if(n)save();render();toast(n?('Årgang lagt inn på '+n+(n===1?' vin':' viner')):'Fant ingen årstall i navnene');
+}
 function pnum(s){return parseFloat(String(s).replace(/[.\s]/g,'').replace(',','.'))}
 function parseReceiptLines(lines){
   var o={order:'',date:'',lines:[],sum:null};
@@ -593,14 +603,18 @@ function addReceipts(){
     o.lines.forEach(function(l){
       var w=db.wines.filter(function(x){return !x.example&&x.vmp===l.vmp})[0];
       if(w){var q0=+w.qty||0,p0=num(w.price); w.price=(p0===''||q0===0)?l.unit:Math.round((p0*q0+l.unit*l.qty)/(q0+l.qty)*100)/100; w.qty=q0+l.qty}
-      else{db.wines.push({id:uid(),name:l.name,producer:'',vintage:'',country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
+      else{db.wines.push({id:uid(),name:l.name,producer:'',vintage:yearIn(l.name),country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
       nb+=l.qty;
     });
     (db.imports=db.imports||[]).push({order:o.order,date:o.date,bottles:o.lines.reduce(function(a,l){return a+l.qty},0)});
   });
   save();ui.imp=[];ui.tab='kjeller';ui.sort='nyest';render();toast(nb+' flasker lagt til ('+nw+' nye viner)');
 }
-function vImport(){return '<div class="panel" style="margin-top:0"><label for="def_site">Lagringssted for nye viner du importerer</label><input id="def_site" list="sitelist" placeholder="f.eks. Hjemme" value="'+esc(defSite())+'" autocomplete="off">'+siteDl()+'<div class="meta" style="margin-top:4px">Brukes på alle nye viner fra kvitteringer, Vivino og innliming. Du kan endre det senere.</div></div>'+vImportRcp()+vVk()+vVivino()}
+function vVintFill(){
+  var n=db.wines.filter(function(w){return !w.example&&!String(w.vintage||'').trim()&&yearIn(w.name)}).length;
+  return '<div class="panel"><div class="name">Årgang fra navn</div><div class="meta">Nye viner får årgang automatisk når navnet inneholder et årstall (f.eks. «Brunello 2011»). Her kan du fylle inn årgang på viner som allerede ligger i kjelleren.</div>'+(n?'<div class="actions"><button class="btn" data-act="fillVint">Fyll inn årgang på '+n+(n===1?' vin':' viner')+'</button></div>':'<div class="meta" style="margin-top:6px">Ingen viner uten årgang har årstall i navnet.</div>')+'</div>';
+}
+function vImport(){return '<div class="panel" style="margin-top:0"><label for="def_site">Lagringssted for nye viner du importerer</label><input id="def_site" list="sitelist" placeholder="f.eks. Hjemme" value="'+esc(defSite())+'" autocomplete="off">'+siteDl()+'<div class="meta" style="margin-top:4px">Brukes på alle nye viner fra kvitteringer, Vivino og innliming. Du kan endre det senere.</div></div>'+vVintFill()+vImportRcp()+vVk()+vVivino()}
 function vImportRcp(){
   var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet, eller Excel-filen du får når du ber om kjøpshistorikken (.xlsx, grupperes per ordre). Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
    '<label for="rcpt">PDF- eller Excel-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>';
@@ -1023,7 +1037,7 @@ function addProps(){
   save();ui.pr.props=[];ui.pr.done=false;ui.pr.text='';ui.pr.url='';if(eanUsed)ui.pr.ean='';if(tg0){ui.pr.target=missNext(tg0,[tg0],order0)}render();toast((created?created+' nye viner, ':'')+n+' vurderinger lagt til'+(d?' med detaljer':''));
 }
 function newWineFrom(r,useEan){
-  var m=r.meta||{},w={id:uid(),name:m.name||r.line,producer:'',vintage:'',country:'',region:'',grape:'',qty:Math.max(1,parseInt(ui.pr.qty,10)||1),price:'',nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:'',ean:useEan?(ui.pr.ean||''):'',type:'',added:Date.now(),ratings:[]};
+  var m=r.meta||{},w={id:uid(),name:m.name||r.line,producer:'',vintage:yearIn(m.name||r.line),country:'',region:'',grape:'',qty:Math.max(1,parseInt(ui.pr.qty,10)||1),price:'',nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:'',ean:useEan?(ui.pr.ean||''):'',type:'',added:Date.now(),ratings:[]};
   db.wines.push(w);return w;
 }
 function fixVmp(w){if(w&&w.bought&&/^\d{6}$/.test(String(w.vmp))){w.vmp=String(w.vmp)+'01';return true}return false}
