@@ -297,7 +297,7 @@ function renderSheet(){
      '<div class="grid2"><div><div class="meta">Antall</div><div class="mono">'+esc(w.qty)+'</div></div><div><div class="meta">Lagringssted</div><div>'+esc([w.site,w.location].filter(Boolean).join(' · ')||'–')+'</div></div>'+
      '<div><div class="meta">Betalt per flaske</div><div class="mono">'+nok(num(w.price))+'</div></div><div><div class="meta">Dagens pris</div><div class="mono">'+nok(num(w.nowPrice))+'</div></div>'+
      '<div><div class="meta">Poeng</div><div class="mono">'+(w.score!==''?esc(w.score)+' / 100':'–')+'</div></div>'+
-     '<div><div class="meta">Vinmonopolet / lenke</div><div>'+(w.link?'<a href="'+esc(w.link)+'" target="_blank" rel="noopener">Åpne side</a>'+(w.vmp?' · ':''):'')+(w.vmp?'<a href="https://www.vinmonopolet.no/p/'+encodeURIComponent(w.vmp)+'" target="_blank" rel="noopener">Varenr. '+esc(w.vmp)+'</a> · <a href="https://bilder.vinmonopolet.no/cache/515x515-0/'+encodeURIComponent(w.vmp)+'-1.jpg" target="_blank" rel="noopener">Bilde</a>':(w.link?'':'–'))+'</div></div></div>'+
+     '<div><div class="meta">Lenker</div><div>'+(function(){var L=wineLinks(w).map(function(x){return '<a href="'+esc(x.u)+'" target="_blank" rel="noopener">'+esc(x.k)+'</a>'});if(w.vmp)L.push('<a href="https://bilder.vinmonopolet.no/cache/515x515-0/'+encodeURIComponent(w.vmp)+'-1.jpg" target="_blank" rel="noopener">Bilde</a>');return L.length?L.join(' · '):'–'})()+(w.vmp?'<div class="meta">Varenr. '+esc(w.vmp)+'</div>':'')+'</div></div></div>'+
      (w.food&&w.food.length?'<div class="meta" style="margin-top:12px">Passer til</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+w.food.map(function(x){return '<span class="chip mute">'+esc(x)+'</span>'}).join('')+'</div>':'')+
      (function(){var f=[w.abv&&'Alkohol '+w.abv,w.volume&&'Volum '+w.volume,w.sugar&&'Sukker '+w.sugar,w.acid&&'Syre '+w.acid,w.importer&&'Importør '+w.importer].filter(Boolean);return f.length?'<div class="meta" style="margin-top:10px">'+esc(f.join(' · '))+'</div>':''})()+
      ratingsPanel(w)+
@@ -900,7 +900,8 @@ function applyBulk(){
 
 /* ---------- eksterne vurderinger (DN o.l.) ---------- */
 function n100(r){if(!r||!r.max)return 0;if(r.max===5&&/vivino/i.test(r.src))return Math.round(Math.max(0,Math.min(100,70+(r.score-3)*15)));return Math.round(r.score/r.max*100)}
-function bestRating(w){var b=null;(w.ratings||[]).forEach(function(r){if(!b||n100(r)>n100(b))b=r});return b}
+function isDN(r){return /^dn\b|dagens\s*n/i.test(String((r&&r.src)||'').trim())}
+function bestRating(w){var rs=w.ratings||[],dn=rs.filter(isDN),pool=dn.length?dn:rs,b=null;pool.forEach(function(r){if(!b||n100(r)>n100(b))b=r});return b}
 function rlabel(r){return r.src+' '+r.score+(r.max!==100?'/'+r.max:'')}
 var STOP={};'brut extra vin les des the and domaine chateau reserva cuvee grand cru premier vieilles vignes blanc rouge rose'.split(' ').forEach(function(x){STOP[x]=1});
 function normS(s){return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()}
@@ -995,11 +996,17 @@ function buildProps(text,defMax){
   }
   return out;
 }
+function mergeFood(cur,add,addFirst){
+  var seen={},out=[],push=function(x){var k=normS(x);if(!k||seen[k])return;seen[k]=1;out.push(String(x).trim())};
+  var a=(cur||[]),b=(add||[]);
+  (addFirst?b.concat(a):a.concat(b)).forEach(push);
+  return out;
+}
 function detailPlan(w,m){
   var p=[],em=function(v){return v===undefined||v===null||v===''};
   if(m.from&&em(w.from))p.push(['from',m.from]);
   if(m.to&&em(w.to))p.push(['to',m.to]);
-  if(m.food&&m.food.length&&!(w.food&&w.food.length))p.push(['food',m.food]);
+  if(m.food&&m.food.length){var mf=mergeFood(w.food,m.food,isDN(m));if(mf.length>(w.food||[]).length)p.push(['food',mf])}
   ['country','region','grape','producer','abv','volume','sugar','acid','importer','vmp','notes'].forEach(function(k){if(m[k]&&em(w[k]))p.push([k,m[k]])});
   if(m.vintage&&em(w.vintage))p.push(['vintage',m.vintage]);
   if(em(w.type)){var it=m.type||inferType({name:w.name,producer:m.producer||w.producer,grape:m.grape||w.grape});if(it)p.push(['type',it])}
@@ -1026,9 +1033,9 @@ function addProps(){
     if(!w)return;
     if(single&&ui.pr.url&&!w.link)w.link=/^https?:\/\//i.test(ui.pr.url)?ui.pr.url:'https://'+ui.pr.url;
     w.ratings=w.ratings||[];
-    var sr=(r.meta&&r.meta.src)||src;
+    var sr=(r.meta&&r.meta.src)||src;if(r.meta&&!r.meta.src)r.meta.src=sr;
     if(r.score!=null&&!w.ratings.some(function(x){return x.src===sr&&x.score===r.score&&x.max===r.max})){
-      var e={src:sr,score:r.score,max:r.max,url:'',date:(r.meta&&r.meta.date)||today()};
+      var e={src:sr,score:r.score,max:r.max,url:(single&&ui.pr.url?(/^https?:\/\//i.test(ui.pr.url)?ui.pr.url:'https://'+ui.pr.url):''),date:(r.meta&&r.meta.date)||today()};
       if(r.meta&&r.meta.note)e.note=r.meta.note;if(r.meta&&r.meta.reviewer)e.reviewer=r.meta.reviewer;
       w.ratings.push(e);n++;
     }
@@ -1373,6 +1380,21 @@ function pasteRating(w){
   addProps();
   ui.pr.details=d0;ui.pr.src=s0;ui.pr.target=t0;
 }
+function linkKind(u,src){
+  var h=String(u||'').toLowerCase(),sr=String(src||'');
+  if(/vinmonopolet\./.test(h)||/^vinmonopolet/i.test(sr))return 'Vinmonopolet';
+  if(/(^|[/.])dn\.no/.test(h)||/^dn\b|dagens/i.test(sr))return 'DN';
+  if(/vivino\./.test(h)||/^vivino/i.test(sr))return 'Vivino';
+  return 'Annen lenke';
+}
+function wineLinks(w){
+  var out=[],seen={},add=function(k,u){if(!u||seen[k])return;seen[k]=1;out.push({k:k,u:u})};
+  (w.ratings||[]).forEach(function(r){if(r.url)add(linkKind(r.url,r.src),r.url)});
+  if(w.link)add(linkKind(w.link,''),w.link);
+  if(w.vmp)add('Vinmonopolet','https://www.vinmonopolet.no/p/'+encodeURIComponent(w.vmp));
+  var ord={Vinmonopolet:1,DN:2,Vivino:3,'Annen lenke':4};
+  return out.sort(function(a,b){return ord[a.k]-ord[b.k]});
+}
 function ratingsPanel(w){
   var rs=w.ratings||[];
   return '<div class="panel"><h2 style="font-size:15px">Eksterne vurderinger</h2>'+
@@ -1399,7 +1421,12 @@ function inferType(w){
   if(h&&!r)return 'Hvit';
   return '';
 }
-function ptsVal(w){var v=[];if(w.score!==''&&w.score!=null&&!isNaN(+w.score))v.push(+w.score);(w.ratings||[]).forEach(function(x){v.push(n100(x))});return v.length?Math.max.apply(null,v):null}
+function ptsVal(w){
+  var rs=w.ratings||[],dn=rs.filter(isDN);
+  if(dn.length)return Math.max.apply(null,dn.map(n100));
+  if(w.score!==''&&w.score!=null&&!isNaN(+w.score))return +w.score;
+  return rs.length?Math.max.apply(null,rs.map(n100)):null;
+}
 var NOSITE='(uten lagringssted)';
 function wineLoc(w){return String(w.site||'').trim()||NOSITE}
 function plassering(w){return String(w.location||'').trim()||NOSITE}
