@@ -1002,13 +1002,36 @@ function mergeFood(cur,add,addFirst){
   (addFirst?b.concat(a):a.concat(b)).forEach(push);
   return out;
 }
+function grapeParts(t){
+  return String(t||'').split(/\s*(?:,|;|\/|&|\bog\b|\band\b)\s*/i).map(function(x){return x.trim()}).filter(Boolean);
+}
+function mergeGrape(cur,add,addFirst){
+  var seen={},idx={},out=[];
+  var take=function(x){
+    var k=normS(x.replace(/\d+(?:[.,]\d+)?\s*%/g,'').replace(/\s+/g,' ').trim());if(!k)return;
+    if(idx[k]===undefined){idx[k]=out.length;out.push(x)}
+    else if(/%/.test(x)&&!/%/.test(out[idx[k]]))out[idx[k]]=x;
+  };
+  var a=grapeParts(cur),b=grapeParts(add);
+  (addFirst?b.concat(a):a.concat(b)).forEach(take);
+  return out.join(', ');
+}
+function mergeRegion(cur,add){
+  var a=String(cur||'').trim(),b=String(add||'').trim();
+  if(!a)return b;if(!b)return a;
+  var na=normS(a),nb=normS(b);
+  if(nb.indexOf(na)>=0&&b.length>a.length)return b;
+  return a;
+}
 function detailPlan(w,m){
   var p=[],em=function(v){return v===undefined||v===null||v===''};
   if(m.from&&em(w.from))p.push(['from',m.from]);
   if(m.to&&em(w.to))p.push(['to',m.to]);
   if(m.food&&m.food.length){var mf=mergeFood(w.food,m.food,isDN(m));if(mf.length>(w.food||[]).length)p.push(['food',mf])}
-  ['country','region','grape','producer','abv','volume','sugar','acid','importer','vmp','notes'].forEach(function(k){if(m[k]&&em(w[k]))p.push([k,m[k]])});
+  ['country','producer','abv','volume','sugar','acid','importer','vmp','notes'].forEach(function(k){if(m[k]&&em(w[k]))p.push([k,m[k]])});
   if(m.vintage&&em(w.vintage))p.push(['vintage',m.vintage]);
+  if(m.grape){var mg=mergeGrape(w.grape,m.grape,isDN(m));if(mg&&mg!==String(w.grape||'').trim())p.push(['grape',mg])}
+  if(m.region){var mr=mergeRegion(w.region,m.region);if(mr&&mr!==String(w.region||'').trim())p.push(['region',mr])}
   if(em(w.type)){var it=m.type||inferType({name:w.name,producer:m.producer||w.producer,grape:m.grape||w.grape});if(it)p.push(['type',it])}
   if(m.price&&String(w.nowPrice)!==String(m.price))p.push(['nowPrice',m.price]);
   return p;
