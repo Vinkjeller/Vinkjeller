@@ -238,7 +238,7 @@ function vKjeller(){
   if(nosite&&!ui.siteBanner)h+='<div class="panel" style="margin:10px 0"><div class="meta">'+nosite+(nosite===1?' vin mangler':' viner mangler')+' lagringssted (hjemme, hytte, by …). Sett det for alle som mangler:</div><div style="display:flex;gap:8px;margin-top:6px"><input id="all_site" list="sitelist" placeholder="Hjemme" aria-label="Lagringssted"><button class="btn small" data-act="setAllSite">Sett</button><button class="btn ghost small" data-act="hideSiteBanner">Skjul</button></div>'+siteDl()+'</div>';
   if(!list.length) h+='<div class="empty">Ingen viner passer. Endre søket eller legg til en vin med «Ny vin».</div>';
   else h+='<div class="list">'+list.map(function(w){return wineRow(w)}).join('')+'</div>';
-  if(ui.sel){var nsel=Object.keys(ui.sel).length;h+='<div class="selbar"><span class="mono">'+nsel+' valgt</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn ghost small" data-act="selall">Velg alle viste</button><button class="btn small" data-act="bulkedit">Endre</button><button class="btn ghost small" data-act="selcancel">Ferdig</button></span></div>'}
+  if(ui.sel){var nsel=Object.keys(ui.sel).length;h+='<div class="selbar"><span class="mono">'+nsel+' valgt</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn ghost small" data-act="selall">Velg alle viste</button><button class="btn small" data-act="bulkedit">Endre</button><button class="btn danger small" data-act="bulkdel">Slett</button><button class="btn ghost small" data-act="selcancel">Ferdig</button></span></div>'}
   return h;
 }
 function vDrikk(){
@@ -276,7 +276,11 @@ function vBackup(){
    '<h2 style="margin-top:26px">Gjenopprett</h2><p class="meta">Dette erstatter alt som ligger i appen nå. Velg en lagret JSON-fil eller lim inn teksten.</p>'+
    '<input type="file" id="impFile" accept=".json,application/json,text/plain"><label for="impText" style="margin-top:10px">Eller lim inn her</label><textarea id="impText"></textarea>'+
    '<div class="actions"><button class="btn" data-act="doImport">Gjenopprett</button></div><div class="meta" id="impMsg" style="margin-top:8px">'+esc(ui.importMsg)+'</div>'+
-   '';
+   '<h2 style="margin-top:26px">Start på nytt</h2><p class="meta">Sletter alle vinene ('+db.wines.length+') og etikettbildene. Lag gjerne en sikkerhetskopi først. Er Dropbox-synk på, slettes de også på de andre enhetene dine. Vil du bare slette noen få, bruk «Velg» i kjelleren og trykk Slett.</p>'+
+   '<label class="chk" style="margin:6px 0"><input type="checkbox" id="rs_log" checked> Slett også «Drukket»-loggen ('+db.log.length+')</label>'+
+   '<label class="chk" style="margin:6px 0"><input type="checkbox" id="rs_imp" checked> Nullstill importhistorikken, så kvitteringer kan importeres på nytt</label>'+
+   '<label for="rs_word" style="margin-top:8px">Skriv «slett» for å bekrefte</label><input id="rs_word" autocomplete="off" autocapitalize="off">'+
+   '<div class="actions"><button class="btn danger" data-act="resetAll">Slett alt og start på nytt</button></div>';
 }
 
 /* ---------- sheet: detalj/skjema ---------- */
@@ -379,6 +383,21 @@ document.addEventListener('click',function(e){
   else if(a==='selmode'){ui.sel={};ui.tab='kjeller';render()}
   else if(a==='selall'){filtered().forEach(function(x){ui.sel[x.id]=true});render()}
   else if(a==='selcancel'){ui.sel=null;render()}
+  else if(a==='bulkdel'){
+    var ids=Object.keys(ui.sel||{});
+    if(!ids.length){toast('Velg minst én vin først');return}
+    if(t.dataset.sure){db.wines=db.wines.filter(function(x){return !ui.sel[x.id]});ids.forEach(delPhoto);ui.sel=null;save();render();toast(ids.length+(ids.length===1?' vin slettet':' viner slettet'))}
+    else{t.dataset.sure='1';t.textContent='Trykk igjen: slett '+ids.length}
+  }
+  else if(a==='resetAll'){
+    var ok=(val('rs_word')||'').trim().toLowerCase()==='slett';
+    if(!ok){toast('Skriv «slett» i feltet først');return}
+    var nw=db.wines.length,dl=document.getElementById('rs_log').checked,di=document.getElementById('rs_imp').checked;
+    db.wines.forEach(function(x){delPhoto(x.id)});db.wines=[];
+    if(dl){db.logDel=(db.logDel||[]).concat(db.log.map(function(e){return e.id}));db.log=[]}
+    if(di){db.imports=[];db.resetAt=Date.now()}
+    ui.sel=null;ui.imp=[];save();ui.tab='kjeller';render();toast('Slettet '+nw+' viner'+(dl?', logg':'')+(di?' og importhistorikk':''));
+  }
   else if(a==='bulkedit'){if(!Object.keys(ui.sel||{}).length)toast('Velg minst én vin først');else{ui.sheet={mode:'bulk'};renderSheet()}}
   else if(a==='rmEx'){db.wines=db.wines.filter(function(x){return !x.example});save();render()}
   else if(a==='mkJson'){
@@ -606,7 +625,7 @@ function addReceipts(){
       else{db.wines.push({id:uid(),name:l.name,producer:'',vintage:yearIn(l.name),country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
       nb+=l.qty;
     });
-    (db.imports=db.imports||[]).push({order:o.order,date:o.date,bottles:o.lines.reduce(function(a,l){return a+l.qty},0)});
+    (db.imports=db.imports||[]).push({order:o.order,date:o.date,at:Date.now(),bottles:o.lines.reduce(function(a,l){return a+l.qty},0)});
   });
   save();ui.imp=[];ui.tab='kjeller';ui.sort='nyest';render();toast(nb+' flasker lagt til ('+nw+' nye viner)');
 }
@@ -637,7 +656,7 @@ function vImportRcp(){
 /* ---------- synk mellom enheter ---------- */
 var sync={state:'connecting',ready:false,base:null,pushed:{},queued:{},pending:0,q:Promise.resolve(),metaSent:'',metaQueued:false,winesReady:false,metaReady:false};
 function wsig(w){var c={};Object.keys(w).forEach(function(k){if(k!=='updated')c[k]=w[k]});return JSON.stringify(c)}
-function msig(){return JSON.stringify([db.log,db.imports||[],db.logDel||[]])}
+function msig(){return JSON.stringify([db.log,db.imports||[],db.logDel||[],db.resetAt||0])}
 function normMeta(){
   db.log.sort(function(a,b){return (String(a.date)+a.id).localeCompare(String(b.date)+b.id)});
   db.logDel=(db.logDel||[]).filter(function(x,i,a){return a.indexOf(x)===i}).sort();
@@ -669,7 +688,7 @@ function syncDiff(){
   var ms=msig();
   if(ms!==sync.metaSent&&!sync.metaQueued){
     sync.metaQueued=true;
-    qpush(function(){var s=msig(),body={log:JSON.parse(JSON.stringify(db.log)),imports:JSON.parse(JSON.stringify(db.imports||[])),logDel:(db.logDel||[]).slice(),updated:Date.now()};return sync.base.collection('meta').doc('state').set(body).then(function(){sync.metaSent=s;sync.metaQueued=false})},function(){sync.metaQueued=false});
+    qpush(function(){var s=msig(),body={log:JSON.parse(JSON.stringify(db.log)),imports:JSON.parse(JSON.stringify(db.imports||[])),logDel:(db.logDel||[]).slice(),resetAt:db.resetAt||0,updated:Date.now()};return sync.base.collection('meta').doc('state').set(body).then(function(){sync.metaSent=s;sync.metaQueued=false})},function(){sync.metaQueued=false});
   }
 }
 function pushPhoto(id,u){if(sync.base)qpush(function(){return sync.base.collection('photos').doc(id).set({u:u})})}
@@ -718,9 +737,11 @@ function applyMeta(snap){
     else if((e.updated||0)>(l.updated||0)){db.log[db.log.indexOf(l)]=e;byid[e.id]=e;changed=true}
   });
   var hi={};(db.imports||[]).forEach(function(e){hi[e.order]=1});
+  var rr=(d&&d.resetAt)||0;if(rr>(db.resetAt||0)){db.resetAt=rr;changed=true}
   ri.forEach(function(e){if(!hi[e.order]){(db.imports=db.imports||[]).push(e);changed=true}});
+  if(db.resetAt){var n1=(db.imports||[]).length;db.imports=(db.imports||[]).filter(function(e){return (e.at||0)>db.resetAt});if(db.imports.length!==n1)changed=true}
   normMeta();
-  sync.metaSent=JSON.stringify([rl,ri,rd]);
+  sync.metaSent=JSON.stringify([rl,ri,rd,rr]);
   if(changed){persistLocal();render(true)}
   if(sync.ready)syncDiff();
   afterRemote(snap,'metaReady');
