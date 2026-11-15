@@ -99,7 +99,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Vinkjelleren</h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
+  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.15b</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
   <nav role="tablist" id="tabs"></nav>
   <div id="banner"></div>
   <main id="view"></main>
@@ -415,6 +415,11 @@ document.addEventListener('click',function(e){
   else if(a==='dbxNow'){toast('Synkroniserer…');dbxSyncNow().then(function(){render()})}
   else if(a==='dbxOff'){if(t.dataset.sure){dbxDisconnect()}else{t.dataset.sure='1';t.textContent='Trykk igjen for å koble fra'}}
   else if(a==='rcpAdd'){addReceipts()}
+  else if(a==='rcpForce'){var fo=ui.imp[+t.dataset.i];if(fo){fo.dup=false;fo.dupWhy='';render()}}
+  else if(a==='impReset'){
+    if(t.dataset.sure){db.imports=[];db.resetAt=Date.now();(ui.imp||[]).forEach(function(o){if(o.dupWhy==='Allerede importert'){o.dup=false;o.dupWhy=''}});save();render();toast('Importhistorikken er nullstilt')}
+    else{t.dataset.sure='1';t.textContent='Trykk igjen for å nullstille'}
+  }
   else if(a==='rcpPlan'){rcBuild();render();window.scrollTo(0,0)}
   else if(a==='rpBack'){ui.rp=null;render()}
   else if(a==='rpApply'){rcApply()}
@@ -654,7 +659,7 @@ function addReceipts(){
     if(o.error||o.dup||!o.lines.length)return;
     o.lines.forEach(function(l){
       var w=db.wines.filter(function(x){return !x.example&&x.vmp===l.vmp})[0];
-      if(w){var q0=+w.qty||0,p0=num(w.price); w.price=(p0===''||q0===0)?l.unit:Math.round((p0*q0+l.unit*l.qty)/(q0+l.qty)*100)/100; w.qty=q0+l.qty}
+      if(w){var q0=+w.qty||0,p0=num(w.price); w.price=(p0===''||q0===0)?l.unit:Math.round((p0*q0+l.unit*l.qty)/(q0+l.qty)*100)/100; w.qty=q0+l.qty;if(!w.bought&&o.date)w.bought=o.date}
       else{var sv=splitVintage(l.name,+String(o.date||'').slice(0,4)||YEAR);db.wines.push({id:uid(),name:sv.name,producer:'',vintage:sv.vintage,country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
       nb+=l.qty;
     });
@@ -801,12 +806,14 @@ function vImportRcp(){
     h+='<div class="panel"><div class="name">'+esc(o.file||'')+'</div>';
     if(o.error||!o.lines.length){h+='<div class="meta">'+esc(o.msg||'Fant ingen varelinjer. Er dette en ordrebekreftelse fra Vinmonopolet?')+'</div></div>';return}
     h+='<div class="meta">Ordre '+esc(o.order)+' · '+esc(o.date?fdate(o.date):'')+(o.dateGuess?' (fra filens opprettelsesdato)':'')+'</div>';
-    if(o.dup)h+='<div class="chip warn" style="display:inline-block;margin:6px 0">'+esc(o.dupWhy||'Allerede importert')+'</div>';
+    if(o.dup)h+='<div class="chip warn" style="display:inline-block;margin:6px 0">'+esc(o.dupWhy||'Allerede importert')+'</div>'+(o.dupWhy==='Allerede importert'?' <button class="btn ghost small" data-act="rcpForce" data-i="'+ui.imp.indexOf(o)+'">Importer likevel</button>':'');
     else{ok++;tb+=o.lines.reduce(function(a,l){return a+l.qty},0);ts+=o.sum||0}
     h+='<div class="list" style="margin-top:8px">'+o.lines.map(function(l){return '<div class="logrow" style="display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px"><span class="mono">'+l.qty+'×</span><span><span class="name">'+esc(l.name)+'</span><br><span class="meta">Varenr. '+esc(l.vmp)+' (art.nr. '+esc(l.art)+')</span></span><span class="price">'+nok(l.unit)+'</span></div>'}).join('')+'</div>';
     h+='<div class="meta" style="margin-top:8px">'+o.lines.reduce(function(a,l){return a+l.qty},0)+' flasker'+(o.sum!=null?' · sum '+nok(o.sum):'')+(o.check==='ok'?' · stemmer med linjene':'')+(o.check==='avvik'?' · OBS: linjene summerer ikke til kvitteringens sum, kontroller':'')+'</div></div>';
   });
   if(ui.imp.length)h+='<div class="actions">'+(ok&&db.wines.some(function(w){return !w.example})?'<button class="btn" data-act="rcpPlan">Avstem mot kjelleren ('+ok+(ok===1?' ordre':' ordrer')+')</button>':'')+(ok?'<button class="btn'+(db.wines.some(function(w){return !w.example})?' ghost':'')+'" data-act="rcpAdd">Legg til som nye viner ('+tb+' flasker)</button>':'')+'<button class="btn ghost" data-act="rcpClear">Tøm listen</button></div>';
+  var nImp=(db.imports||[]).length;
+  if(nImp)h+='<div class="panel"><div class="name">Importhistorikk</div><div class="meta">Appen husker '+nImp+' ordrer du har importert, så de ikke legges inn to ganger. Historikken blir liggende selv om du har slettet vinene. Nullstill den hvis du vil importere de samme ordrene på nytt.</div><div class="actions"><button class="btn ghost small" data-act="impReset">Nullstill importhistorikk</button></div></div>';
   if(ok)h+='<p class="meta">'+ok+(ok===1?' ordre':' ordrer')+' · '+tb+' flasker'+(ts?' · sum '+nok(ts):'')+'. Du kan velge flere filer nå eller i flere runder; de legges i samme liste.</p><p class="meta">Finnes varenummeret allerede, øker antallet og prisen blir et snitt. Land, region, årgang og sted fyller du inn etterpå.</p>';
   return h;
 }
@@ -1594,7 +1601,8 @@ function wineLinks(w){
   (w.ratings||[]).forEach(function(r){if(r.url)add(linkKind(r.url,r.src),r.url)});
   if(w.link)add(linkKind(w.link,''),w.link);
   if(w.vmp)add('Vinmonopolet','https://www.vinmonopolet.no/p/'+encodeURIComponent(w.vmp));
-  var ord={Vinmonopolet:1,DN:2,Vivino:3,'Annen lenke':4};
+  else if(!seen['Vinmonopolet']&&w.name){var pq=(w.producer&&normS(w.name).indexOf(normS(w.producer))<0?w.producer+' ':'')+w.name;add('Vinmonopolet (søk)','https://www.vinmonopolet.no/search?q='+encodeURIComponent(pq)+'&searchType=product')}
+  var ord={Vinmonopolet:1,'Vinmonopolet (søk)':1,DN:2,Vivino:3,'Annen lenke':4};
   return out.sort(function(a,b){return ord[a.k]-ord[b.k]});
 }
 function ratingsPanel(w){
