@@ -415,6 +415,14 @@ document.addEventListener('click',function(e){
   else if(a==='dbxNow'){toast('Synkroniserer…');dbxSyncNow().then(function(){render()})}
   else if(a==='dbxOff'){if(t.dataset.sure){dbxDisconnect()}else{t.dataset.sure='1';t.textContent='Trykk igjen for å koble fra'}}
   else if(a==='rcpAdd'){addReceipts()}
+  else if(a==='rcpPlan'){rcBuild();render();window.scrollTo(0,0)}
+  else if(a==='rpBack'){ui.rp=null;render()}
+  else if(a==='rpApply'){rcApply()}
+  else if(a==='rpAll'){ui.rp.showAll=!ui.rp.showAll;render()}
+  else if(a==='rpVk'){ui.rp.vkText=val('rp_vk');ui.rp.vk=vkParse(ui.rp.vkText);rcRefresh();var nn=ui.rp.lines.filter(function(l){return l.vkDone}).length;render();toast(ui.rp.vk.length?('Fant '+ui.rp.vk.length+' kjøp, årgang satt på '+nn+' linjer'):'Fant ingen kjøp i teksten')}
+  else if(a==='rpFind'){var q=ltoks(val('rp_q')),res=db.wines.filter(function(x){return !x.example}).map(function(x){var wt=ltoks(x.name+' '+(x.producer||'')+' '+(x.vintage||''));var hit=q.filter(function(z){return wt.some(function(b){return tokEq(z,b)})}).length;return {id:x.id,s:q.length?hit/q.length:0}}).filter(function(r){return r.s>0}).sort(function(a1,b1){return b1.s-a1.s}).slice(0,8).map(function(r){return r.id});ui.rp.search.q=val('rp_q');ui.rp.search.res=res;render();if(!res.length)toast('Ingen treff')}
+  else if(a==='rpFindX'){ui.rp.search=null;render()}
+  else if(a==='rpPick'){var li=+t.dataset.i;ui.rp.lines[li].pick=t.dataset.id;ui.rp.lines[li].manual=true;ui.rp.search=null;rcAlloc();render()}
   else if(a==='doImport'){doImport(val('impText'))}
 });
 document.addEventListener('change',function(e){
@@ -431,6 +439,7 @@ document.addEventListener('change',function(e){
   else if(id==='rcpt'&&e.target.files.length){readReceipts(Array.prototype.slice.call(e.target.files))}
   else if(ds.vk!==undefined){ui.vk.items[+ds.vk].pick=e.target.value;render();window.scrollTo(0,sy)}
   else if(ds.vm){ui.viv.map[ds.vm]=e.target.value;render();window.scrollTo(0,sy)}
+  else if(ds.rp!==undefined){var rl=ui.rp.lines[+ds.rp];if(e.target.value==='__search__'){ui.rp.search={i:+ds.rp,q:rl.full||rl.name,res:[]};render();window.scrollTo(0,sy);return}rl.pick=e.target.value;rl.manual=true;render();window.scrollTo(0,sy)}
   else if(ds.vp!==undefined){ui.viv.plan[+ds.vp].pick=e.target.value;render();window.scrollTo(0,sy)}
   else if(ds.lv){ui.vivLeft.off[ds.lv]=!e.target.checked}
   else if(id==='viv_log'){ui.vivLeft.log=e.target.checked}
@@ -481,8 +490,18 @@ function yearTail(t,maxY){
   var m=String(t||'').match(/\s(\d{2})$/);if(!m)return '';
   var y=2000+(+m[1]);return (y<=(maxY||YEAR)&&y>=2000)?String(y):'';
 }
+function splitVintage(name,maxY){
+  name=String(name||'');
+  var re=/(^|[^\d.,])((?:19|20)\d{2})(?![\d])/g,m,hit=null;
+  while((m=re.exec(name))){if(+m[2]<=YEAR)hit={i:m.index+m[1].length,y:m[2],len:4}}
+  if(!hit){var t=name.match(/\s(\d{2})$/),y2=t&&(2000+(+t[1]));if(t&&y2<=(maxY||YEAR)&&y2>=2000)hit={i:t.index+1,y:String(y2),len:2}}
+  if(!hit)return {name:name,vintage:''};
+  var out=(name.slice(0,hit.i)+' '+name.slice(hit.i+hit.len)).replace(/\(\s*\)/g,' ').replace(/\s+/g,' ').replace(/\s+([,.;:)])/g,'$1').replace(/[\s,;:\-\u2013(]+$/,'').replace(/^[\s,;:\-\u2013)]+/,'').trim();
+  if(!out||/\b(de|du|des|di|da|of|la|le|von|van|del|della)$/i.test(out))return {name:name,vintage:hit.y};
+  return {name:out,vintage:hit.y};
+}
 function fillVintages(){
-  var n=0;db.wines.forEach(function(w){if(w.example||String(w.vintage||'').trim())return;var y=yearIn(w.name);if(y){w.vintage=y;n++}});
+  var n=0;db.wines.forEach(function(w){if(w.example||String(w.vintage||'').trim())return;var sv=splitVintage(w.name);if(sv.vintage&&yearIn(w.name)){w.vintage=sv.vintage;w.name=sv.name;n++}});
   if(n)save();render();toast(n?('Årgang lagt inn på '+n+(n===1?' vin':' viner')):'Fant ingen årstall i navnene');
 }
 function pnum(s){return parseFloat(String(s).replace(/[.\s]/g,'').replace(',','.'))}
@@ -636,7 +655,7 @@ function addReceipts(){
     o.lines.forEach(function(l){
       var w=db.wines.filter(function(x){return !x.example&&x.vmp===l.vmp})[0];
       if(w){var q0=+w.qty||0,p0=num(w.price); w.price=(p0===''||q0===0)?l.unit:Math.round((p0*q0+l.unit*l.qty)/(q0+l.qty)*100)/100; w.qty=q0+l.qty}
-      else{db.wines.push({id:uid(),name:l.name,producer:'',vintage:yearIn(l.name)||yearTail(l.name,+String(o.date||'').slice(0,4)||YEAR),country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
+      else{var sv=splitVintage(l.name,+String(o.date||'').slice(0,4)||YEAR);db.wines.push({id:uid(),name:sv.name,producer:'',vintage:sv.vintage,country:'',region:'',grape:'',qty:l.qty,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:l.name,producer:'',grape:''}),bought:o.date,added:Date.now()});nw++}
       nb+=l.qty;
     });
     (db.imports=db.imports||[]).push({order:o.order,date:o.date,at:Date.now(),bottles:o.lines.reduce(function(a,l){return a+l.qty},0)});
@@ -648,7 +667,132 @@ function vVintFill(){
   return '<div class="panel"><div class="name">Årgang fra navn</div><div class="meta">Nye viner får årgang automatisk når navnet inneholder et årstall (f.eks. «Brunello 2011»). Her kan du fylle inn årgang på viner som allerede ligger i kjelleren.</div>'+(n?'<div class="actions"><button class="btn" data-act="fillVint">Fyll inn årgang på '+n+(n===1?' vin':' viner')+'</button></div>':'<div class="meta" style="margin-top:6px">Ingen viner uten årgang har årstall i navnet.</div>')+'</div>';
 }
 function vImport(){return '<div class="panel" style="margin-top:0"><label for="def_site">Lagringssted for nye viner du importerer</label><input id="def_site" list="sitelist" placeholder="f.eks. Hjemme" value="'+esc(defSite())+'" autocomplete="off">'+siteDl()+'<div class="meta" style="margin-top:4px">Brukes på alle nye viner fra kvitteringer, Vivino og innliming. Du kan endre det senere.</div></div>'+vVintFill()+vImportRcp()+vVk()+vVivino()}
+
+/* ---------- avstemming av Vinmonopolet-kjøp mot kjelleren (Vivino først) ---------- */
+function ltoks(t){return normS(t).split(' ').filter(function(x){return x.length>=3&&!/^\d+$/.test(x)&&!STOP[x]})}
+function tokEq(a,b){return a===b||(a.length>=4&&b.indexOf(a)===0)||(b.length>=4&&a.indexOf(b)===0)}
+function looseScore(rt,wt){
+  if(!rt.length||!wt.length)return 0;
+  var hit=rt.filter(function(a){return wt.some(function(b){return tokEq(a,b)})}).length;
+  if(hit<Math.min(2,rt.length))return 0;
+  var wh=wt.filter(function(b){return rt.some(function(a){return tokEq(a,b)})}).length;
+  return hit/rt.length*0.6+wh/wt.length*0.4;
+}
+function rcVk(name){
+  var v=ui.rp&&ui.rp.vk;if(!v||!v.length)return null;
+  var rt=ltoks(name),best=null,bs=0.6;
+  v.forEach(function(e){var sc=looseScore(rt,ltoks(e.name));if(sc>bs){bs=sc;best=e}});
+  return best;
+}
+function rcCands(l){
+  var out=[],rt=ltoks(l.name+' '+(l.full||''));
+  db.wines.forEach(function(w){
+    if(w.example)return;
+    var sc=(l.vmp&&String(w.vmp)===l.vmp)?2:looseScore(rt,wtoks(w));
+    if(sc<0.45)return;
+    var vok=!l.vintage||!w.vintage||w.vintage===l.vintage;
+    out.push({id:w.id,ratio:sc,vok:vok});
+  });
+  out.sort(function(a,b){return (b.vok-a.vok)||(b.ratio-a.ratio)});
+  return out.slice(0,8);
+}
+function rcDefault(l,free){
+  var ok=l.cands.filter(function(c){return c.vok&&byId(c.id)});
+  if(!ok.length)return '__drunk__';
+  if(l.vintage)return ok[0].id;
+  var top=ok[0].ratio,near=ok.filter(function(c){return c.ratio>=top-0.1});
+  near.sort(function(a,b){return (free[b.id]||0)-(free[a.id]||0)});
+  return near[0].id;
+}
+function rcBuild(){
+  var lines=[];
+  ui.imp.forEach(function(o){
+    if(o.error||o.dup||!o.lines.length)return;
+    var oy=+String(o.date||'').slice(0,4)||YEAR;
+    o.lines.forEach(function(l){
+      var sv=splitVintage(l.name,oy);
+      lines.push({vmp:l.vmp,name:sv.name,rawName:l.name,vintage:sv.vintage,qty:l.qty,unit:l.unit,date:o.date||'',order:o.order,pick:null,manual:false});
+    });
+  });
+  ui.rp={lines:lines,vk:(ui.rp&&ui.rp.vk)||[],showAll:false,search:null};
+  rcRefresh(true);
+}
+function rcFree(){var f={};db.wines.forEach(function(w){if(!w.example)f[w.id]=Math.max(0,(+w.qty||0)-(+w.vmpQty||0))});return f}
+function rcRefresh(all){
+  var L=ui.rp.lines;
+  L.forEach(function(l){
+    if(!l.vintage||l.vkDone){var e=!l.vintage?rcVk(l.rawName):null;if(e&&e.vintage&&e.vintage!=='NV'){l.vintage=e.vintage;l.vkDone=true}if(e&&e.name&&!l.full)l.full=e.name}
+    l.cands=rcCands(l);
+  });
+  var free=rcFree();
+  /* standardvalg: nyeste kjøp får flasker i kjelleren først */
+  var ord=L.slice().sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''))});
+  ord.forEach(function(l){
+    if(!l.manual)l.pick=rcDefault(l,free);
+    var w=byId(l.pick);if(w){var m=Math.min(l.qty,free[w.id]||0);free[w.id]=(free[w.id]||0)-m}
+  });
+}
+function rcAlloc(){
+  var L=ui.rp.lines,free=rcFree(),ord=L.slice().sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''))});
+  ord.forEach(function(l){
+    var w=byId(l.pick);l.m=0;l.dr=0;l.nw=0;
+    if(l.pick==='__new__'){l.nw=l.qty}
+    else if(w){l.m=Math.min(l.qty,free[w.id]||0);free[w.id]=(free[w.id]||0)-l.m;l.dr=l.qty-l.m}
+    else l.dr=l.qty;
+  });
+  return free;
+}
+function rcApply(){
+  var L=ui.rp.lines;rcAlloc();
+  var matched=0,drunk=0,fresh=0,per={};
+  L.forEach(function(l){
+    var w=byId(l.pick),nm=l.full||l.name;
+    if(l.m>0&&w){var p=per[w.id]=per[w.id]||{q:0,sum:0,date:'',vmp:l.vmp};p.q+=l.m;p.sum+=l.m*(+l.unit||0);if(String(l.date)>p.date)p.date=l.date;matched+=l.m}
+    for(var k=0;k<l.dr;k++){
+      db.log.push({id:uid(),wineId:w?w.id:'',name:w?w.name:nm,vintage:w?(w.vintage||''):(l.vintage||''),producer:w?(w.producer||''):'',type:w?(w.type||''):inferType({name:nm,producer:'',grape:''}),date:'',score:'',place:'',note:'Kjøpt fra Vinmonopolet'+(l.date?' '+fdate(l.date):'')+(w?', mer enn det som står i kjelleren.':', ikke funnet i kjelleren (Vivino).')+' Dato for drikking ukjent.',updated:Date.now()});drunk++;
+    }
+    if(l.nw>0){
+      db.wines.push({id:uid(),name:nm,producer:'',vintage:l.vintage||'',country:'',region:'',grape:'',qty:l.nw,price:l.unit,nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:l.vmp,ean:'',type:inferType({name:nm,producer:'',grape:''}),bought:l.date||'',vmpQty:l.nw,added:Date.now()});fresh+=l.nw;
+    }
+  });
+  Object.keys(per).forEach(function(id){
+    var w=byId(id),p=per[id],q0=+w.vmpQty||0,p0=num(w.price),avg=p.sum/p.q;
+    w.price=(q0>0&&p0!=='')?Math.round((p0*q0+p.sum)/(q0+p.q)*100)/100:Math.round(avg*100)/100;
+    w.vmpQty=q0+p.q;if(!w.vmp)w.vmp=p.vmp;if(p.date&&(!w.bought||String(p.date)>String(w.bought)))w.bought=p.date;
+  });
+  ui.imp.forEach(function(o){
+    if(o.error||o.dup||!o.lines.length)return;
+    (db.imports=db.imports||[]).push({order:o.order,date:o.date,at:Date.now(),bottles:o.lines.reduce(function(a,l){return a+l.qty},0)});
+  });
+  save();ui.imp=[];ui.rp=null;ui.tab='kjeller';render();
+  toast(matched+' fl. koblet til kjelleren, '+drunk+' lagt i Drukket'+(fresh?', '+fresh+' nye':''));
+}
+function vRcPlan(){
+  var P=ui.rp,free=rcAlloc(),L=P.lines;
+  var sm=L.reduce(function(a,l){return a+l.m},0),sd=L.reduce(function(a,l){return a+l.dr},0),sn=L.reduce(function(a,l){return a+l.nw},0),tot=L.reduce(function(a,l){return a+l.qty},0);
+  var h='<h2>Avstem kvitteringer mot kjelleren</h2><p class="meta">Kjelleren (fra Vivino) er fasit for hva du har nå. Hver kvitteringslinje kobles til en vin og årgang i kjelleren. Bare så mange flasker som kvitteringen viser trekkes fra det som står der, resten av vinen røres ikke. Flasker som ikke finnes i kjelleren, legges i Drukket. De nyeste kjøpene får plass i kjelleren først.</p>'+
+   '<div class="panel"><div class="stats" style="display:flex;gap:16px;flex-wrap:wrap"><div><b class="mono">'+tot+'</b><div class="meta">flasker i kvitteringene</div></div><div><b class="mono">'+sm+'</b><div class="meta">kobles til kjelleren</div></div><div><b class="mono">'+sd+'</b><div class="meta">går til Drukket</div></div>'+(sn?'<div><b class="mono">'+sn+'</b><div class="meta">nye i kjelleren</div></div>':'')+'</div>'+
+   '<label for="rp_vk" style="margin-top:10px">Valgfritt: lim inn tekst fra «Mine kjøp» for å finne årgang</label><textarea id="rp_vk" style="min-height:70px" placeholder="Brukes til å finne årgang på linjer som mangler den">'+esc(P.vkText||'')+'</textarea><div class="actions" style="margin-top:6px"><button class="btn ghost small" data-act="rpVk">Bruk årgangene</button></div></div>'+
+   '<div class="actions"><button class="btn" data-act="rpApply">Utfør avstemming</button><button class="btn ghost" data-act="rpBack">Tilbake</button></div>';
+  var rows=L.map(function(l,i){return {l:l,i:i}});
+  if(!P.showAll)rows=rows.filter(function(r){return r.l.dr>0||r.l.nw>0||r.l.pick==='__drunk__'});
+  h+='<div class="meta" style="margin:8px 0">'+(P.showAll?'Viser alle '+L.length+' linjer.':'Viser '+rows.length+' av '+L.length+' linjer: de som helt eller delvis går til Drukket.')+' <button class="btn ghost small" data-act="rpAll">'+(P.showAll?'Vis bare Drukket':'Vis alle')+'</button></div><div class="list">';
+  h+=rows.map(function(r){
+    var l=r.l,i=r.i,w=byId(l.pick);
+    var opts=l.cands.map(function(c){var x=byId(c.id);return '<option value="'+esc(c.id)+'"'+(l.pick===c.id?' selected':'')+'>Kjelleren: '+esc(x.name+' '+(x.vintage||'uten årgang'))+' ('+esc(x.qty)+' fl. i kjelleren'+(c.vok?'':', annen årgang')+')</option>'}).join('');
+    if(w&&!l.cands.some(function(c){return c.id===l.pick}))opts='<option value="'+esc(w.id)+'" selected>Kjelleren: '+esc(w.name+' '+(w.vintage||'uten årgang'))+'</option>'+opts;
+    var res=l.m>0?(l.m+' fl. kobles'):'';if(l.dr>0)res+=(res?', ':'')+l.dr+' fl. til Drukket';if(l.nw>0)res=l.nw+' fl. som ny vin i kjelleren';
+    return '<div class="logrow"><div class="name">'+l.qty+'× '+esc(l.full||l.name)+' '+esc(l.vintage||'')+'</div><div class="meta">'+esc([l.date?fdate(l.date):'',nok(l.unit),'varenr. '+l.vmp].filter(Boolean).join(' · '))+'</div>'+
+     '<select data-rp="'+i+'" style="margin-top:4px" aria-label="Kobling">'+opts+'<option value="__drunk__"'+(l.pick==='__drunk__'?' selected':'')+'>Ikke i kjelleren: legg i Drukket</option><option value="__new__"'+(l.pick==='__new__'?' selected':'')+'>Legg til som ny vin i kjelleren</option><option value="__search__">Velg en annen vin …</option></select>'+
+     '<div class="meta" style="margin-top:4px"><b>'+esc(res)+'</b></div>'+
+     (P.search&&P.search.i===i?'<div class="panel" style="margin-top:6px"><label for="rp_q">Søk i kjelleren</label><input id="rp_q" value="'+esc(P.search.q||'')+'" autocomplete="off"><div class="actions" style="margin-top:6px"><button class="btn small" data-act="rpFind">Søk</button><button class="btn ghost small" data-act="rpFindX">Lukk</button></div>'+
+       (P.search.res||[]).map(function(id){var x=byId(id);return '<button class="btn ghost small" style="display:block;width:100%;text-align:left;margin-top:4px" data-act="rpPick" data-i="'+i+'" data-id="'+esc(id)+'">'+esc(x.name+' '+(x.vintage||'uten årgang'))+' ('+esc(x.qty)+' fl.)</button>'}).join('')+'</div>':'')+'</div>';
+  }).join('')+'</div>';
+  if(!rows.length)h+='<div class="empty">Alle linjene kobles til kjelleren. Trykk «Vis alle» for å se dem.</div>';
+  return h+'<div class="actions"><button class="btn" data-act="rpApply">Utfør avstemming</button><button class="btn ghost" data-act="rpBack">Tilbake</button></div>';
+}
 function vImportRcp(){
+  if(ui.rp)return vRcPlan();
   var h='<h2>Importer kvittering</h2><p class="meta">Velg én eller flere PDF-ordrebekreftelser fra Vinmonopolet, eller Excel-filen du får når du ber om kjøpshistorikken (.xlsx, grupperes per ordre). Filen leses i nettleseren din. Bare varelinjene brukes, ikke navn og adresse, og ingenting sendes videre.</p>'+
    '<label for="rcpt">PDF- eller Excel-filer</label><input id="rcpt" type="file" accept="application/pdf,.pdf,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>';
   if(ui.impBusy)h+='<p class="meta" role="status">'+esc(ui.impBusy)+'</p>';
@@ -662,7 +806,7 @@ function vImportRcp(){
     h+='<div class="list" style="margin-top:8px">'+o.lines.map(function(l){return '<div class="logrow" style="display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px"><span class="mono">'+l.qty+'×</span><span><span class="name">'+esc(l.name)+'</span><br><span class="meta">Varenr. '+esc(l.vmp)+' (art.nr. '+esc(l.art)+')</span></span><span class="price">'+nok(l.unit)+'</span></div>'}).join('')+'</div>';
     h+='<div class="meta" style="margin-top:8px">'+o.lines.reduce(function(a,l){return a+l.qty},0)+' flasker'+(o.sum!=null?' · sum '+nok(o.sum):'')+(o.check==='ok'?' · stemmer med linjene':'')+(o.check==='avvik'?' · OBS: linjene summerer ikke til kvitteringens sum, kontroller':'')+'</div></div>';
   });
-  if(ui.imp.length)h+='<div class="actions">'+(ok?'<button class="btn" data-act="rcpAdd">Legg til '+ok+(ok===1?' ordre':' ordrer')+' ('+tb+' flasker)</button>':'')+'<button class="btn ghost" data-act="rcpClear">Tøm listen</button></div>';
+  if(ui.imp.length)h+='<div class="actions">'+(ok&&db.wines.some(function(w){return !w.example})?'<button class="btn" data-act="rcpPlan">Avstem mot kjelleren ('+ok+(ok===1?' ordre':' ordrer')+')</button>':'')+(ok?'<button class="btn'+(db.wines.some(function(w){return !w.example})?' ghost':'')+'" data-act="rcpAdd">Legg til som nye viner ('+tb+' flasker)</button>':'')+'<button class="btn ghost" data-act="rcpClear">Tøm listen</button></div>';
   if(ok)h+='<p class="meta">'+ok+(ok===1?' ordre':' ordrer')+' · '+tb+' flasker'+(ts?' · sum '+nok(ts):'')+'. Du kan velge flere filer nå eller i flere runder; de legges i samme liste.</p><p class="meta">Finnes varenummeret allerede, øker antallet og prisen blir et snitt. Land, region, årgang og sted fyller du inn etterpå.</p>';
   return h;
 }
@@ -1102,7 +1246,7 @@ function addProps(){
   save();ui.pr.props=[];ui.pr.done=false;ui.pr.text='';ui.pr.url='';if(eanUsed)ui.pr.ean='';if(tg0){ui.pr.target=missNext(tg0,[tg0],order0)}render();toast((created?created+' nye viner, ':'')+n+' vurderinger lagt til'+(d?' med detaljer':''));
 }
 function newWineFrom(r,useEan){
-  var m=r.meta||{},w={id:uid(),name:m.name||r.line,producer:'',vintage:yearIn(m.name||r.line),country:'',region:'',grape:'',qty:Math.max(1,parseInt(ui.pr.qty,10)||1),price:'',nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:'',ean:useEan?(ui.pr.ean||''):'',type:'',added:Date.now(),ratings:[]};
+  var m=r.meta||{},sv0=splitVintage(m.name||r.line),w={id:uid(),name:m.vintage?(m.name||r.line):sv0.name,producer:'',vintage:m.vintage?'':sv0.vintage,country:'',region:'',grape:'',qty:Math.max(1,parseInt(ui.pr.qty,10)||1),price:'',nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:'',ean:useEan?(ui.pr.ean||''):'',type:'',added:Date.now(),ratings:[]};
   db.wines.push(w);return w;
 }
 function fixVmp(w){if(w&&w.bought&&/^\d{6}$/.test(String(w.vmp))){w.vmp=String(w.vmp)+'01';return true}return false}
@@ -1245,7 +1389,7 @@ function vLeft(){
    '<div class="actions"><button class="btn" data-act="vivZero">Sett merkede til 0 flasker</button><button class="btn ghost" data-act="vivKeep">Behold alle som de er</button></div></div>';
 }
 function vVivino(){
-  var v=ui.viv,h=vLeft()+'<hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h2>Importer fra Vivino</h2><p class="meta">Rekkefølge for å få riktig kjeller: 1) importer alle ordrebekreftelsene først, 2) importer Vivino til slutt. Da kobles Vivino-radene til vinene fra kvitteringene, og antallet i Vivino blir fasit for hva du har nå. Vivino: Innstillinger → Account Management → be om eksport. Pakk ut zip-filen og velg CSV-filen med kjelleren (cellar.csv). Filen leses i nettleseren din og sendes ikke videre.</p>'+
+  var v=ui.viv,h=vLeft()+'<hr style="border:0;border-top:1px solid var(--line);margin:24px 0"><h2>Importer fra Vivino</h2><p class="meta">Anbefalt rekkefølge: 1) importer Vivino først, det er fasit for hva du har nå, 2) importer kvitteringene og Excel-filen med «Avstem mot kjelleren». Da kobles kvitteringene til Vivino-vinene, og det som ikke finnes i kjelleren legges i Drukket. Vivino: Innstillinger → Account Management → be om eksport. Pakk ut zip-filen og velg CSV-filen med kjelleren (cellar.csv). Filen leses i nettleseren din og sendes ikke videre.</p>'+
    '<label for="vivFile">CSV-fil fra Vivino</label><input id="vivFile" type="file" accept=".csv,text/csv,text/plain"><label for="viv_text" style="margin-top:10px">Eller lim inn innholdet</label><textarea id="viv_text" style="min-height:80px"></textarea><div class="actions"><button class="btn ghost" data-act="vivRead">Les innlimt tekst</button></div>';
   if(!v)return h;
   if(v.plan)return h+vVivPlan(v);
