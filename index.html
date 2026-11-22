@@ -99,7 +99,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.22</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
+  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.22b</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
   <nav role="tablist" id="tabs"></nav>
   <div id="banner"></div>
   <main id="view"></main>
@@ -192,7 +192,7 @@ function render(skipSheet){
   if(db.wines.some(function(w){return w.example})) b+='<div class="banner"><span>Eksempelviner (merket «eksempel»). De er ikke dine.</span><button class="btn ghost small" data-act="rmEx">Fjern eksempler</button></div>';
   document.getElementById('banner').innerHTML=b;
   var v=document.getElementById('view');
-  v.innerHTML=({kjeller:vKjeller,drikk:vDrikk,rang:vRang,stat:vStat,logg:vLogg,import:vImport,poeng:vPoeng,backup:vBackup})[ui.tab]();
+  v.innerHTML=({kjeller:vKjeller,drikk:vDrikk,rang:vRang,stat:vStat,telle:vTelle,logg:vLogg,import:vImport,poeng:vPoeng,backup:vBackup})[ui.tab]();
   if(!skipSheet)renderSheet();
   showSync();
 }
@@ -233,7 +233,7 @@ function vKjeller(){
    '<div><label for="fc">Land</label><select id="fc"><option value="">Alle</option>'+countries.map(function(c){return '<option'+(ui.country===c?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select></div>'+
    '<div><label for="fs">Drikkevindu</label><select id="fs">'+[['','Alle'],['now','Drikk nå'],['over','Over toppen'],['wait','Lagres'],['none','Uten vindu']].map(function(o){return '<option value="'+o[0]+'"'+(ui.status===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
    '<div><label for="fo">Sorter</label><select id="fo">'+[['navn','Navn'],['aargang','Årgang (nyest)'],['vindu','Drikkevindu (slutter først)'],['pris','Pris (høyest)'],['ext','Poeng (høyest)'],['sted','Lagringssted'],['nyest','Sist lagt til']].map(function(o){return '<option value="'+o[0]+'"'+(ui.sort===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div>'+
-   '<div style="display:flex;align-items:end;gap:10px;justify-content:space-between"><label class="chk"><input type="checkbox" id="fe"'+(ui.empty?' checked':'')+'> Vis tomme</label><span style="display:flex;gap:6px"><button class="btn ghost" data-act="selmode">Velg flere</button><button class="btn" data-act="add">Ny vin</button></span></div></div>';
+   '<div style="display:flex;align-items:end;gap:10px;justify-content:space-between"><label class="chk"><input type="checkbox" id="fe"'+(ui.empty?' checked':'')+'> Vis tomme</label><span style="display:flex;gap:6px"><button class="btn ghost" data-tab="telle">Tell</button><button class="btn ghost" data-act="selmode">Velg flere</button><button class="btn" data-act="add">Ny vin</button></span></div></div>';
   var nosite=db.wines.filter(function(w){return !w.example&&!w.site}).length;
   if(nosite&&!ui.siteBanner)h+='<div class="panel" style="margin:10px 0"><div class="meta">'+nosite+(nosite===1?' vin mangler':' viner mangler')+' lagringssted (hjemme, hytte, by …). Sett det for alle som mangler:</div><div style="display:flex;gap:8px;margin-top:6px"><input id="all_site" list="sitelist" placeholder="Hjemme" aria-label="Lagringssted"><button class="btn small" data-act="setAllSite">Sett</button><button class="btn ghost small" data-act="hideSiteBanner">Skjul</button></div>'+siteDl()+'</div>';
   if(!list.length) h+='<div class="empty">Ingen viner passer. Endre søket eller legg til en vin med «Ny vin».</div>';
@@ -258,6 +258,20 @@ function vDrikk(){
 function group(key){var m={}; db.wines.forEach(function(w){var k=key(w)||'Ukjent'; m[k]=(m[k]||0)+(+w.qty||0)}); return Object.keys(m).map(function(k){return [k,m[k]]}).filter(function(x){return x[1]>0}).sort(function(a,b){return b[1]-a[1]}).slice(0,8)}
 function bars(rows){var mx=rows.length?rows[0][1]:1; return rows.length?rows.map(function(r){return '<div class="bar"><span class="lbl" title="'+esc(r[0])+'">'+esc(r[0])+'</span><span><i style="width:'+Math.max(2,Math.round(r[1]/mx*100))+'%"></i></span><span class="n">'+r[1]+'</span></div>'}).join(''):'<div class="empty">Ingen data ennå.</div>'}
 function gItems(items,fn,lim){var m={};items.forEach(function(it){var k=fn(it.i)||'Ukjent';m[k]=(m[k]||0)+it.n});return Object.keys(m).map(function(k){return [k,m[k]]}).filter(function(x){return x[1]>0}).sort(function(a,b){return b[1]-a[1]}).slice(0,lim||8)}
+function barsOrd(rows){
+  var mx=1;rows.forEach(function(r){if(r[1]>mx)mx=r[1]});
+  return rows.length?rows.map(function(r){return '<div class="bar"><span class="lbl" title="'+esc(r[0])+'">'+esc(r[0])+'</span><span><i style="width:'+Math.max(2,Math.round(r[1]/mx*100))+'%'+(r[2]?';background:var(--'+r[2]+')':'')+'"></i></span><span class="n">'+r[1]+'</span></div>'}).join(''):'<div class="meta">Ingen data</div>';
+}
+function vTimeline(kj){
+  var tl={},noEnd=0,over=0;
+  kj.forEach(function(it){var t=num(it.w.to);if(t==='')noEnd+=it.n;else if(t<YEAR)over+=it.n;else tl[t]=(tl[t]||0)+it.n});
+  var rows=[];
+  if(over)rows.push(['Over toppen',over,'bad']);
+  Object.keys(tl).map(Number).sort(function(a,b){return a-b}).slice(0,14).forEach(function(y){rows.push([String(y),tl[y],y<=YEAR+1?'warn':''])});
+  if(noEnd)rows.push(['Uten sluttår',noEnd,'muted']);
+  var soon=(over||0)+Object.keys(tl).filter(function(y){return +y<=YEAR+1}).reduce(function(a,y){return a+tl[y]},0);
+  return '<div class="full" style="grid-column:1/-1"><h2>Når må flaskene drikkes</h2><div class="meta" style="margin-bottom:6px">Antall flasker etter siste år i drikkevinduet. '+soon+(soon===1?' flaske er':' flasker er')+' over toppen eller har siste år '+YEAR+' eller '+(YEAR+1)+'.</div>'+barsOrd(rows)+'</div>';
+}
 function vStat(){
   var sc=ui.statScope||'kjeller',kj=[],dr=[];
   if(sc!=='drukket')db.wines.forEach(function(w){var q=+w.qty||0;if(q>0)kj.push({i:w,n:q,w:w})});
@@ -275,6 +289,7 @@ function vStat(){
   else h+=st(nb,'flasker totalt')+st(kj.reduce(function(a,it){return a+it.n},0),'i kjelleren')+st(dr.length,'drukket')+st(nok(paid),'innkjøpsverdi');
   h+='</div>';
   if(!items.length)return h+'<div class="empty">'+(sc==='drukket'?'Ingen drukne viner er logget ennå.':'Ingen viner å vise.')+'</div>';
+  h+=(sc==='drukket'?'':'<div class="cols" style="margin-bottom:6px">'+vTimeline(kj)+'</div>');
   h+='<div class="cols"><div><h2>Land</h2>'+bars(gItems(items,function(w){return w.country}))+'</div><div><h2>Druer</h2>'+bars(gItems(items,function(w){return w.grape}))+'</div>'+
    '<div><h2>Type</h2>'+bars(gItems(items,function(w){return w.type}))+'</div>'+
    (sc==='drukket'?'':'<div><h2>Lagringssted</h2>'+bars(gItems(items.reduce(function(a,it){if(it.w)spotsOf(it.w).forEach(function(x){a.push({i:{site:x.site},n:+x.qty||0})});else a.push(it);return a},[]),function(w){return w.site}))+'</div>')+
@@ -285,6 +300,34 @@ function vStat(){
     if(top.length)h+='<div><h2>Best vurdert av de drukne</h2>'+top.map(function(it){return '<div class="bar"><span class="lbl" title="'+esc(it.e.name)+'">'+esc(it.e.name+' '+(it.e.vintage||''))+'</span><span></span><span class="n">'+esc(it.e.score)+'</span></div>'}).join('')+'</div>';
   }
   return h+'</div>';
+}
+function cntRows(site){
+  var out=[];
+  db.wines.forEach(function(w){if(w.example||!(+w.qty>0))return;spotsOf(w).forEach(function(x,i){if(x.qty>0&&((String(x.site||'').trim()||NOSITE)===site))out.push({w:w,i:i,x:x,k:w.id+'|'+i})})});
+  out.sort(function(a,b){return locCmp(String(a.x.location||'').trim()||NOSITE,String(b.x.location||'').trim()||NOSITE)||String(a.w.name).localeCompare(String(b.w.name),'nb')});
+  return out;
+}
+function vTelle(){
+  var C=ui.cnt=ui.cnt||{site:'',c:{}},sites={};
+  db.wines.forEach(function(w){if(w.example)return;spotsOf(w).forEach(function(x){if(x.qty>0){var k=String(x.site||'').trim()||NOSITE;sites[k]=(sites[k]||0)+x.qty}})});
+  var keys=Object.keys(sites).sort(locCmp);
+  var h='<h2>Telle kjelleren</h2><p class="meta">Velg et lagringssted og gå gjennom flaskene, plassering for plassering. Trykk «Stemmer», eller skriv inn antallet du faktisk finner. Når du er ferdig, kan du oppdatere avvikene i kjelleren.</p>'+
+   '<div class="tools"><div class="full"><label for="cnt_site">Lagringssted</label><select id="cnt_site"><option value="">Velg …</option>'+keys.map(function(k){return '<option value="'+esc(k)+'"'+(C.site===k?' selected':'')+'>'+esc(k)+' ('+sites[k]+' fl.)</option>'}).join('')+'</select></div></div>';
+  if(!C.site||!sites[C.site])return h+(keys.length?'':'<div class="empty">Ingen flasker å telle.</div>');
+  var rows=cntRows(C.site),done=rows.filter(function(r){return C.c[r.k]!==undefined}).length,dev=rows.filter(function(r){return C.c[r.k]!==undefined&&C.c[r.k]!==r.x.qty});
+  h+='<div class="meta" style="margin:8px 0"><b>'+done+' av '+rows.length+'</b> linjer talt'+(dev.length?', '+dev.length+' med avvik':'')+'.</div><div class="list">';
+  var lastLoc=null;
+  rows.forEach(function(r){
+    var loc=String(r.x.location||'').trim()||'Uten plassering';
+    if(loc!==lastLoc){h+='<h3 style="margin:14px 0 4px;font-size:15px">'+esc(loc)+'</h3>';lastLoc=loc}
+    var c=C.c[r.k],st='';
+    if(c!==undefined)st=c===r.x.qty?'<span class="chip ok">Stemmer</span>':'<span class="chip warn">Avvik '+(c-r.x.qty>0?'+':'')+(c-r.x.qty)+'</span>';
+    h+='<div class="logrow"><div style="display:flex;justify-content:space-between;gap:8px"><span class="name">'+esc(r.w.name)+' '+esc(r.w.vintage||'NV')+'</span><span class="mono">skal være '+r.x.qty+'</span></div><div style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap"><button class="btn small" data-act="cntOk" data-k="'+esc(r.k)+'">Stemmer</button><input type="number" min="0" inputmode="numeric" data-cnt="'+esc(r.k)+'" placeholder="Talt" aria-label="Talt antall" value="'+(c===undefined?'':c)+'" style="max-width:90px">'+st+'</div></div>';
+  });
+  h+='</div>';
+  if(dev.length)h+='<div class="panel"><h2 style="font-size:15px">Avvik</h2>'+dev.map(function(r){return '<div class="meta">'+esc(r.w.name+' '+(r.w.vintage||'NV'))+': skal være '+r.x.qty+', talt '+C.c[r.k]+'</div>'}).join('')+'</div>';
+  h+='<div class="actions">'+(dev.length?'<button class="btn" data-act="cntApply">Oppdater '+dev.length+(dev.length===1?' avvik':' avvik')+' i kjelleren</button>':'')+'<button class="btn ghost" data-act="cntReset">Start telling på nytt</button></div>';
+  return h;
 }
 function vBackup(){
   return vDbx()+'<h2>Sikkerhetskopi</h2><p class="meta">Lag en kopi jevnlig, også når Dropbox-synk er på. Du kan laste ned en fil eller kopiere teksten.</p>'+
@@ -326,7 +369,7 @@ function renderSheet(){
      (function(){var f=[w.abv&&'Alkohol '+w.abv,w.volume&&'Volum '+w.volume,w.sugar&&'Sukker '+w.sugar,w.acid&&'Syre '+w.acid,w.importer&&'Importør '+w.importer].filter(Boolean);return f.length?'<div class="meta" style="margin-top:10px">'+esc(f.join(' · '))+'</div>':''})()+
      ratingsPanel(w)+drunkFor(w)+
      (w.notes?'<div class="meta" style="margin-top:12px">Notater</div><div class="note">'+esc(w.notes)+'</div>':'')+
-     (w.qty>0?'<div class="panel"><h2 style="font-size:15px">Registrer drukket</h2><div class="grid2"><div><label for="d_date">Dato</label><input id="d_date" type="date" value="'+today()+'"></div>'+
+     movePanel(w)+(w.qty>0?'<div class="panel"><h2 style="font-size:15px">Registrer drukket</h2><div class="grid2"><div><label for="d_date">Dato</label><input id="d_date" type="date" value="'+today()+'"></div>'+
        '<div><label for="d_score">Poeng (0–100)</label><input id="d_score" type="number" min="0" max="100" inputmode="numeric"></div>'+
        ''+((w.spots&&w.spots.length>=2)?'<div class="full"><label for="d_spot">Hvilken flaske, fra hvilket sted</label><select id="d_spot">'+w.spots.map(function(x,i){return x.qty>0?'<option value="'+i+'">'+esc(spotTxt(x))+' ('+x.qty+' fl.)</option>':''}).join('')+'</select></div>':'')+'<div class="full"><label for="d_place">Sted eller anledning (valgfri)</label><input id="d_place"></div><div class="full"><label for="d_note">Smaksnotat</label><textarea id="d_note"></textarea></div></div><div class="actions"><button class="btn" data-act="drink">Åpne én flaske</button></div></div>':'<div class="meta" style="margin-top:12px">Ingen flasker igjen.</div>')+
      '<div class="actions"><button class="btn ghost" data-act="edit">Rediger</button><button class="btn ghost" data-act="plus">+1 flaske</button><button class="btn ghost" data-close="1" data-x="1">Lukk</button></div></div></div>';
@@ -360,6 +403,14 @@ document.addEventListener('click',function(e){
   var a=t.dataset.act, w=ui.sheet&&ui.sheet.id?byId(ui.sheet.id):null;
   if(a==='add'){ui.sheet={mode:'edit',id:null};renderSheet()}
   else if(a==='edit'&&w){ui.sheet={mode:'edit',id:w.id};renderSheet()}
+  else if(a==='moveBtl'&&w){if(moveBottles(w)){save();renderSheet();render();toast('Flaskene er flyttet')}}
+  else if(a==='cntOk'){var kk=t.dataset.k,rr=cntRows(ui.cnt.site).filter(function(r){return r.k===kk})[0];if(rr){ui.cnt.c[kk]=rr.x.qty;var yy=window.scrollY;render();window.scrollTo(0,yy)}}
+  else if(a==='cntReset'){ui.cnt={site:ui.cnt?ui.cnt.site:'',c:{}};render();window.scrollTo(0,0)}
+  else if(a==='cntApply'){
+    var rws=cntRows(ui.cnt.site),nch=0;
+    rws.forEach(function(r){var c=ui.cnt.c[r.k];if(c===undefined||c===r.x.qty)return;var sp=spotsOf(r.w).map(function(x){return {site:x.site,location:x.location,qty:x.qty}});sp[r.i].qty=c;r.w.qty=sp.reduce(function(a,x){return a+x.qty},0);if(sp.length>=2)r.w.spots=sp;else delete r.w.spots;nch++});
+    ui.cnt.c={};save();render();toast(nch+(nch===1?' linje oppdatert':' linjer oppdatert'))
+  }
   else if(a==='spAdd'){var rows=readSpots();rows.push({site:rows.length?rows[rows.length-1].site:defSite(),location:'',qty:1});document.getElementById('spotsBox').innerHTML=spotsHtml(rows);spTot()}
   else if(a==='spDel'){var sr=t.closest('.sprow');if(document.querySelectorAll('#spotsBox .sprow').length<2){toast('Minst ett sted må være med');return}if(sr)sr.remove();spTot()}
   else if(a==='plus'&&w){w.qty=(+w.qty||0)+1;save();render();toast('La til én flaske')}
@@ -459,6 +510,8 @@ document.addEventListener('change',function(e){
   if(ds.pi!==undefined){ui.pr.props[+ds.pi].on=e.target.checked;render();window.scrollTo(0,sy);return}
   if(ds.ps!==undefined){var pr=ui.pr.props[+ds.ps];pr.pick=e.target.value;pr.on=!!pr.pick;render();window.scrollTo(0,sy);return}
   if(id&&id.indexOf('rk_')===0&&id!=='rk_text'){var rkk=id.slice(3),rkv=e.target.type==='checkbox'?e.target.checked:e.target.value;if(rkk==='wp'||rkk==='ww'||rkk==='wf')rkv=+rkv;ui.rk[rkk]=rkv;render();window.scrollTo(0,sy);return}
+  if(id==='cnt_site'){ui.cnt={site:e.target.value,c:{}};render();window.scrollTo(0,0);return}
+  if(ds.cnt!==undefined){var cv=e.target.value.trim();if(cv==='')delete ui.cnt.c[ds.cnt];else ui.cnt.c[ds.cnt]=Math.max(0,parseInt(cv,10)||0);render();window.scrollTo(0,sy);return}
   if(id==='st_scope'){ui.statScope=e.target.value;render();window.scrollTo(0,sy);return}
   if(id==='lg_y'){ui.lg.y=e.target.value;render();window.scrollTo(0,sy);return}
   if(id==='pr_max'){ui.pr.max=+e.target.value;return}
@@ -1680,6 +1733,25 @@ function fixSpots(w){
   if(d>0)sp[0].qty+=d;else for(var i=sp.length-1;i>=0&&d<0;i--){var t=Math.min(sp[i].qty,-d);sp[i].qty-=t;d+=t}
   w.spots=sp;w.site=sp[0].site;w.location=sp[0].location;
 }
+function movePanel(w){
+  if(!(+w.qty>0))return '';
+  var sp=spotsOf(w),o=sp.map(function(x,i){return x.qty>0?'<option value="'+i+'">'+esc(spotTxt(x))+' ('+x.qty+' fl.)</option>':''}).join('');
+  return '<div class="panel"><h2 style="font-size:15px">Flytt flasker</h2><div class="grid2"><div class="full"><label for="mv_from">Fra</label><select id="mv_from">'+o+'</select></div><div><label for="mv_n">Antall</label><input id="mv_n" type="number" min="1" value="1" inputmode="numeric"></div><div><label for="mv_site">Til lagringssted</label><input id="mv_site" list="sitelist" autocomplete="off" placeholder="uendret"></div><div class="full"><label for="mv_loc">Til plassering (valgfri)</label><input id="mv_loc"></div></div><div class="actions"><button class="btn" data-act="moveBtl">Flytt</button></div></div>'+siteDl();
+}
+function moveBottles(w){
+  var sp=spotsOf(w).map(function(x){return {site:x.site,location:x.location,qty:x.qty}}),i=parseInt(val('mv_from'),10),n=parseInt(val('mv_n'),10)||0,ts=val('mv_site'),tl=val('mv_loc');
+  if(!sp[i]||!(sp[i].qty>0)){toast('Velg hvor flaskene ligger nå');return false}
+  if(n<1||n>sp[i].qty){toast('Antallet må være mellom 1 og '+sp[i].qty);return false}
+  if(!ts&&!tl){toast('Skriv inn et sted eller en plassering å flytte til');return false}
+  var ds=ts||sp[i].site,dl=tl;
+  if(!tl&&ts&&ts!==sp[i].site)dl='';else if(!tl)dl=sp[i].location;
+  if(String(ds||'')===String(sp[i].site||'')&&String(dl||'')===String(sp[i].location||'')){toast('Flaskene ligger allerede der');return false}
+  var tgt=sp.filter(function(x,j){return j!==i&&String(x.site||'')===String(ds||'')&&String(x.location||'')===String(dl||'')})[0];
+  sp[i].qty-=n;
+  if(tgt)tgt.qty+=n;else sp.push({site:ds||'',location:dl||'',qty:n});
+  w.spots=sp.filter(function(x){return x.qty>0});
+  return true;
+}
 function spotLine(w){
   if(Array.isArray(w.spots)&&w.spots.length>=2)return '<div class="meta">Lagring: '+esc(w.spots.filter(function(x){return x.qty>0}).map(function(x){return spotTxt(x)+' ('+x.qty+')'}).join(' · '))+'</div>';
   return (w.site||w.location)?'<div class="meta">Lagring: '+esc([w.site,w.location].filter(Boolean).join(' · '))+'</div>':'';
@@ -1861,7 +1933,7 @@ function vLogg(){
    '<div class="tools"><div><label for="lg_q">Søk</label><input id="lg_q" type="search" value="'+esc(ui.lg.q)+'" placeholder="Navn, sted, notat"></div>'+
    '<div><label for="lg_y">År</label><select id="lg_y">'+opts(years,yr,'Alle år')+'</select></div>'+
    '<div class="full"><button class="btn" data-act="logNew">Legg til drukket vin</button></div></div>';
-  if(!rows.length)return h+'<div class="empty">'+(all.length?'Ingen treff.':'Ingen er logget ennå. Åpne en vin og bruk «Registrer drukket», eller legg til en vin du har drukket et annet sted.')+'</div>';
+  if(!rows.length)return h+'<div class="empty">'+(all.length?'Ingen treff.':'Ingen er logget ennå. Åpne en vin og bruk «Registrer drukket», eller bruk «Legg til drukket vin» for en vin du har drukket et annet sted.')+'</div>';
   return h+'<div class="list">'+rows.map(function(e){
     var has=e.score!==''&&e.score!=null;
     return '<div class="logrow" data-openlog="'+esc(e.id)+'" style="cursor:pointer"><div style="display:flex;justify-content:space-between;gap:10px"><span class="name">'+esc(e.name)+' '+(e.vintage?esc(e.vintage):'')+'</span>'+(has?'<span class="score">'+esc(e.score)+' / 100</span>':'')+'</div>'+
@@ -1897,7 +1969,7 @@ function vLogSheet(id){
   var e=id?logById(id):null,linked=e&&e.wineId&&byId(e.wineId);
   e=e||{name:'',vintage:'',date:today(),score:'',place:'',note:''};
   return '<div class="sheetbg" data-close="1"><div class="sheet" role="dialog" aria-label="Drukket vin"><h2 style="font-size:20px">'+(id?'Rediger oppføring':'Legg til drukket vin')+'</h2><form id="lf"><div class="grid2">'+
-   (linked?'<div class="full"><div class="name">'+esc(e.name)+' '+esc(e.vintage||'')+'</div></div>':field('l_name','Vinnavn',e.name,'text',{full:1,attr:'required'})+field('l_vint','Årgang',e.vintage,'text',{attr:'inputmode="numeric"'}))+
+   (linked?'<div class="full"><div class="name">'+esc(e.name)+' '+esc(e.vintage||'')+'</div></div>':field('l_name','Vinnavn',e.name,'text',{full:1,attr:'required'})+field('l_vint','Årgang',e.vintage,'text',{attr:'inputmode="numeric"'})+field('l_producer','Produsent',e.producer||'','text')+typeSel('l_type',e.type||'','Ukjent')+field('l_country','Land',e.country||'','text')+field('l_region','Region',e.region||'','text')+field('l_grape','Druer',e.grape||'','text')+field('l_price','Pris per flaske (kr)',e.price===undefined?'':e.price,'text',{attr:'inputmode="decimal"'}))+
    field('l_date','Dato',e.date,'date')+field('l_score','Poeng (0–100)',e.score,'number',{attr:'inputmode="numeric" min="0" max="100"'})+
    field('l_place','Sted eller anledning',e.place||'','text',{full:1})+
    '<div class="full"><label for="l_note">Smaksnotat</label><textarea id="l_note">'+esc(e.note)+'</textarea></div></div>'+
@@ -1907,7 +1979,16 @@ function saveLog(){
   var id=ui.sheet&&ui.sheet.id,e=id?logById(id):null,isNew=!e;
   if(isNew){e={id:uid(),wineId:'',name:'',vintage:'',date:today(),score:'',place:'',note:''};db.log.push(e)}
   var linked=e.wineId&&byId(e.wineId);
-  if(!linked){var nm=val('l_name');if(!nm){toast('Skriv inn et vinnavn');if(isNew)db.log.pop();return}e.name=nm;e.vintage=val('l_vint')}
+  if(!linked){
+    var nm=val('l_name');if(!nm){toast('Skriv inn et vinnavn');if(isNew)db.log.pop();return}
+    e.name=nm;e.vintage=val('l_vint');e.producer=val('l_producer');e.type=val('l_type');e.country=val('l_country');e.region=val('l_region');e.grape=val('l_grape');e.price=val('l_price');
+    if(isNew){
+      /* knytt til en vin du allerede har, ellers lag en vin med 0 flasker så den får full visning */
+      var ex=db.wines.filter(function(x){return !x.example&&normS(x.name)===normS(nm)&&String(x.vintage||'')===String(e.vintage||'')})[0];
+      if(ex){e.wineId=ex.id}
+      else{var nw={id:uid(),name:nm,producer:e.producer,vintage:e.vintage,country:e.country,region:e.region,grape:e.grape,qty:0,price:e.price,nowPrice:'',location:'',site:'',from:'',to:'',score:'',notes:'',vmp:'',ean:'',type:e.type,ratings:[],added:Date.now()};db.wines.push(nw);e.wineId=nw.id}
+    }
+  }
   e.date=val('l_date')||today();e.score=val('l_score');e.place=val('l_place');e.note=val('l_note');e.updated=Date.now();
   save();ui.sheet=null;render();toast(isNew?'Lagt til i Drukket':'Endringer lagret');
 }
