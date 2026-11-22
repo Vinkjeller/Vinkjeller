@@ -99,7 +99,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.15c</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
+  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.22</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
   <nav role="tablist" id="tabs"></nav>
   <div id="banner"></div>
   <main id="view"></main>
@@ -118,7 +118,7 @@ function load(){
   try{var s=localStorage.getItem(KEY); if(s){var d=JSON.parse(s); if(d&&d.wines){db=d; if(!db.log)db.log=[]; db.wines.forEach(fixVmp); return;}}}catch(e){ui.storageOk=false}
   seed();
 }
-function save(){ persistLocal(); syncDiff(); }
+function save(){ db.wines.forEach(fixSpots); persistLocal(); syncDiff(); }
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function seed(){
   var ex=[
@@ -202,7 +202,7 @@ function wineRow(w,extra){
   return '<button class="row'+(pk?' picked':'')+'" '+(sel?'data-sel="':'data-open="')+w.id+'"><div class="qty'+(w.qty>0?'':' zero')+'">'+esc(w.qty)+'</div>'+
    '<div><div class="name">'+(pk?'\u2713 ':'')+esc(w.name)+' '+(w.vintage?esc(w.vintage):'NV')+(w.example?'<span class="ex">eksempel</span>':'')+'</div>'+
    '<div class="meta">'+esc([w.type,w.producer,w.region,w.country].filter(Boolean).join(' · '))+'</div>'+
-   ((w.site||w.location)?'<div class="meta">Lagring: '+esc([w.site,w.location].filter(Boolean).join(' · '))+'</div>':'')+winBar(w)+(extra||'')+'</div>'+
+   spotLine(w)+winBar(w)+(extra||'')+'</div>'+
    '<div class="right"><span class="price">'+nok(num(w.price))+'</span><span class="chip '+s.c+'">'+esc(s.t)+'</span>'+(w.score!==''?'<span class="score">'+esc(w.score)+' p</span>':'')+(bestRating(w)?'<span class="score" style="color:var(--muted)">'+esc(rlabel(bestRating(w)))+'</span>':'')+'</div></button>';
 }
 function filtered(){
@@ -210,9 +210,9 @@ function filtered(){
   var r=db.wines.filter(function(w){
     if(!ui.empty&&!(w.qty>0))return false;
     if(ui.country&&w.country!==ui.country)return false;
-    if(ui.site&&wineLoc(w)!==ui.site)return false;
+    if(ui.site&&sitesOf(w).indexOf(ui.site)<0)return false;
     if(ui.status&&status(w).k!==ui.status)return false;
-    if(q){var h=[w.name,w.producer,w.region,w.country,w.grape,w.site,w.location,w.vintage,w.vmp,w.ean,w.type,(w.food||[]).join(' '),w.notes].join(' ').toLowerCase(); if(h.indexOf(q)<0)return false}
+    if(q){var h=[w.name,w.producer,w.region,w.country,w.grape,w.site,w.location,(w.spots||[]).map(function(x){return x.site+' '+x.location}).join(' '),w.vintage,w.vmp,w.ean,w.type,(w.food||[]).join(' '),w.notes].join(' ').toLowerCase(); if(h.indexOf(q)<0)return false}
     return true});
   var cmp={
     navn:function(a,b){return a.name.localeCompare(b.name,'nb')},
@@ -224,7 +224,7 @@ function filtered(){
     nyest:function(a,b){return (b.added||0)-(a.added||0)}}[ui.sort];
   return r.sort(cmp);
 }
-function siteFilterOpts(){var m={};db.wines.forEach(function(w){m[wineLoc(w)]=1});return Object.keys(m).sort(locCmp).map(function(k){return '<option'+(ui.site===k?' selected':'')+'>'+esc(k)+'</option>'}).join('')}
+function siteFilterOpts(){var m={};db.wines.forEach(function(w){sitesOf(w).forEach(function(k){m[k]=1})});return Object.keys(m).sort(locCmp).map(function(k){return '<option'+(ui.site===k?' selected':'')+'>'+esc(k)+'</option>'}).join('')}
 function vKjeller(){
   var countries=Array.from(new Set(db.wines.map(function(w){return w.country}).filter(Boolean))).sort();
   var list=filtered();
@@ -277,7 +277,7 @@ function vStat(){
   if(!items.length)return h+'<div class="empty">'+(sc==='drukket'?'Ingen drukne viner er logget ennå.':'Ingen viner å vise.')+'</div>';
   h+='<div class="cols"><div><h2>Land</h2>'+bars(gItems(items,function(w){return w.country}))+'</div><div><h2>Druer</h2>'+bars(gItems(items,function(w){return w.grape}))+'</div>'+
    '<div><h2>Type</h2>'+bars(gItems(items,function(w){return w.type}))+'</div>'+
-   (sc==='drukket'?'':'<div><h2>Lagringssted</h2>'+bars(gItems(items,function(w){return w.site}))+'</div>')+
+   (sc==='drukket'?'':'<div><h2>Lagringssted</h2>'+bars(gItems(items.reduce(function(a,it){if(it.w)spotsOf(it.w).forEach(function(x){a.push({i:{site:x.site},n:+x.qty||0})});else a.push(it);return a},[]),function(w){return w.site}))+'</div>')+
    '<div><h2>Region</h2>'+bars(gItems(items,function(w){return w.region}))+'</div><div><h2>Årgang</h2>'+bars(gItems(items,function(w){return w.vintage?String(w.vintage):'NV'}))+'</div>';
   if(sc!=='kjeller'){
     h+='<div><h2>Drukket per år</h2>'+bars(gItems(dr,function(){return ''}).length?(function(){var m={};dr.forEach(function(it){var y=String(it.e.date||'').slice(0,4)||'Ukjent dato';m[y]=(m[y]||0)+1});return Object.keys(m).map(function(k){return [k,m[k]]}).sort(function(a,b){return String(b[0]).localeCompare(String(a[0]))}).slice(0,8)})():[])+'</div>';
@@ -318,7 +318,7 @@ function renderSheet(){
      '<h2 style="font-size:21px;margin-bottom:2px">'+esc(w.name)+' '+(w.vintage?esc(w.vintage):'NV')+'</h2>'+
      '<div class="meta">'+esc([w.type,w.producer,w.region,w.country,w.grape].filter(Boolean).join(' · '))+'</div>'+
      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><span class="chip '+st.c+'">'+esc(st.t)+'</span>'+(w.from||w.to?'<span class="chip mute">Vindu '+esc(w.from||'?')+'–'+esc(w.to||'?')+'</span>':'')+'</div>'+
-     '<div class="grid2"><div><div class="meta">Antall</div><div class="mono">'+esc(w.qty)+'</div></div><div><div class="meta">Lagringssted</div><div>'+esc([w.site,w.location].filter(Boolean).join(' · ')||'–')+'</div></div>'+
+     '<div class="grid2"><div><div class="meta">Antall</div><div class="mono">'+esc(w.qty)+'</div></div><div><div class="meta">Lagringssted</div><div>'+((w.spots&&w.spots.length>=2)?w.spots.filter(function(x){return x.qty>0}).map(function(x){return esc(spotTxt(x))+' <span class="mono">'+x.qty+' fl.</span>'}).join('<br>'):esc([w.site,w.location].filter(Boolean).join(' · ')||'–'))+'</div></div>'+
      '<div><div class="meta">Betalt per flaske</div><div class="mono">'+nok(num(w.price))+'</div></div><div><div class="meta">Dagens pris</div><div class="mono">'+nok(num(w.nowPrice))+'</div></div>'+
      '<div><div class="meta">Poeng</div><div class="mono">'+(w.score!==''?esc(w.score)+' / 100':'–')+'</div></div>'+
      '<div><div class="meta">Lenker</div><div>'+(function(){var L=wineLinks(w).map(function(x){return '<a href="'+esc(x.u)+'" target="_blank" rel="noopener">'+esc(x.k)+'</a>'});if(w.vmp)L.push('<a href="https://bilder.vinmonopolet.no/cache/515x515-0/'+encodeURIComponent(w.vmp)+'-1.jpg" target="_blank" rel="noopener">Bilde</a>');return L.length?L.join(' · '):'–'})()+(w.vmp?'<div class="meta">Varenr. '+esc(w.vmp)+'</div>':'')+'</div></div></div>'+
@@ -328,7 +328,7 @@ function renderSheet(){
      (w.notes?'<div class="meta" style="margin-top:12px">Notater</div><div class="note">'+esc(w.notes)+'</div>':'')+
      (w.qty>0?'<div class="panel"><h2 style="font-size:15px">Registrer drukket</h2><div class="grid2"><div><label for="d_date">Dato</label><input id="d_date" type="date" value="'+today()+'"></div>'+
        '<div><label for="d_score">Poeng (0–100)</label><input id="d_score" type="number" min="0" max="100" inputmode="numeric"></div>'+
-       '<div class="full"><label for="d_place">Sted eller anledning (valgfri)</label><input id="d_place"></div><div class="full"><label for="d_note">Smaksnotat</label><textarea id="d_note"></textarea></div></div><div class="actions"><button class="btn" data-act="drink">Åpne én flaske</button></div></div>':'<div class="meta" style="margin-top:12px">Ingen flasker igjen.</div>')+
+       ''+((w.spots&&w.spots.length>=2)?'<div class="full"><label for="d_spot">Hvilken flaske, fra hvilket sted</label><select id="d_spot">'+w.spots.map(function(x,i){return x.qty>0?'<option value="'+i+'">'+esc(spotTxt(x))+' ('+x.qty+' fl.)</option>':''}).join('')+'</select></div>':'')+'<div class="full"><label for="d_place">Sted eller anledning (valgfri)</label><input id="d_place"></div><div class="full"><label for="d_note">Smaksnotat</label><textarea id="d_note"></textarea></div></div><div class="actions"><button class="btn" data-act="drink">Åpne én flaske</button></div></div>':'<div class="meta" style="margin-top:12px">Ingen flasker igjen.</div>')+
      '<div class="actions"><button class="btn ghost" data-act="edit">Rediger</button><button class="btn ghost" data-act="plus">+1 flaske</button><button class="btn ghost" data-close="1" data-x="1">Lukk</button></div></div></div>';
     getPhotoAny(w.id).then(function(u){var el=document.getElementById('phWrap'); if(!el||!ui.sheet||ui.sheet.id!==w.id)return; if(u)el.innerHTML='<img class="photo" alt="Etikett" src="'+u+'">'; else if(w.vmp)el.innerHTML='<img class="photo" alt="Bilde fra Vinmonopolet" src="https://bilder.vinmonopolet.no/cache/515x515-0/'+encodeURIComponent(w.vmp)+'-1.jpg" onerror="this.remove()">'});
     return;
@@ -336,10 +336,9 @@ function renderSheet(){
   var n=!w; w=w||{name:'',producer:'',vintage:'',country:'',region:'',grape:'',qty:1,price:'',nowPrice:'',location:'',site:defSite(),from:'',to:'',score:'',notes:'',vmp:''};
   host.innerHTML='<div class="sheetbg" data-close="1"><div class="sheet" role="dialog" aria-label="Vin"><h2 style="font-size:20px">'+(n?'Ny vin':'Rediger vin')+'</h2>'+(n?'<button class="btn ghost small" type="button" data-act="fromText" style="margin-bottom:12px">Fyll inn fra kopiert tekst</button>':'')+'<form id="wf"><div class="grid2">'+
    field('f_name','Vinnavn',w.name,'text',{full:1,attr:'required'})+field('f_producer','Produsent',w.producer,'text',{full:1})+
-   field('f_vintage','Årgang (tom = NV)',w.vintage,'number',{attr:'inputmode="numeric" min="1800" max="2100"'})+field('f_qty','Antall flasker',w.qty,'number',{attr:'inputmode="numeric" min="0"'})+
+   field('f_vintage','Årgang (tom = NV)',w.vintage,'number',{full:1,attr:'inputmode="numeric" min="1800" max="2100"'})+
    field('f_country','Land',w.country)+field('f_region','Region',w.region)+field('f_grape','Druer',w.grape)+typeSel('f_type',w.type,'Ukjent')+
-   field('f_site','Lagringssted (hjemme, hytte, by …)',w.site||'','text',{full:1,attr:'list="sitelist" autocomplete="off"'})+siteDl()+
-   field('f_location','Plassering (f.eks. reol, rom, kasse)',w.location,'text',{full:1})+
+   '<div class="full"><div class="name" style="margin-bottom:6px">Lagring og antall flasker</div><div id="spotsBox">'+spotsHtml(spotsOf(w))+'</div><div class="actions" style="margin:0 0 4px;align-items:center"><button class="btn ghost small" type="button" data-act="spAdd">+ Legg til et sted til</button><span class="meta" id="spTot">Sum: '+spotsOf(w).reduce(function(a,x){return a+(+x.qty||0)},0)+' flasker</span></div><div class="meta">Har du samme vin flere steder, legg til ett sted per plassering og skriv hvor mange flasker som ligger der.</div></div>'+siteDl()+
    field('f_price','Betalt per flaske (kr)',w.price,'text',{attr:'inputmode="decimal"'})+field('f_nowPrice','Dagens pris (kr)',w.nowPrice,'text',{attr:'inputmode="decimal"'})+
    field('f_from','Drikk fra (år)',w.from,'number',{attr:'inputmode="numeric"'})+field('f_to','Drikk til (år)',w.to,'number',{attr:'inputmode="numeric"'})+
    field('f_score','Poeng (0–100)',w.score,'number',{attr:'inputmode="numeric" min="0" max="100"'})+field('f_vmp','Vinmonopolet varenummer',w.vmp,'text',{attr:'inputmode="numeric"'})+
@@ -361,6 +360,8 @@ document.addEventListener('click',function(e){
   var a=t.dataset.act, w=ui.sheet&&ui.sheet.id?byId(ui.sheet.id):null;
   if(a==='add'){ui.sheet={mode:'edit',id:null};renderSheet()}
   else if(a==='edit'&&w){ui.sheet={mode:'edit',id:w.id};renderSheet()}
+  else if(a==='spAdd'){var rows=readSpots();rows.push({site:rows.length?rows[rows.length-1].site:defSite(),location:'',qty:1});document.getElementById('spotsBox').innerHTML=spotsHtml(rows);spTot()}
+  else if(a==='spDel'){var sr=t.closest('.sprow');if(document.querySelectorAll('#spotsBox .sprow').length<2){toast('Minst ett sted må være med');return}if(sr)sr.remove();spTot()}
   else if(a==='plus'&&w){w.qty=(+w.qty||0)+1;save();render();toast('La til én flaske')}
   else if(a==='del'&&w){
     if(t.dataset.sure){db.wines=db.wines.filter(function(x){return x.id!==w.id});delPhoto(w.id);save();ui.sheet=null;render();toast('Vin slettet')}
@@ -368,6 +369,7 @@ document.addEventListener('click',function(e){
   }
   else if(a==='drink'&&w){
     var sc=val('d_score'); db.log.push(Object.assign(logSnap(w),{id:uid(),wineId:w.id,name:w.name,vintage:w.vintage,producer:w.producer||'',type:w.type||'',date:val('d_date')||today(),score:sc,place:val('d_place'),note:val('d_note'),updated:Date.now()}));
+    if(w.spots&&w.spots.length>=2){var si=parseInt(val('d_spot'),10);if(!(w.spots[si]&&w.spots[si].qty>0)){si=-1;w.spots.forEach(function(x,i){if(si<0&&x.qty>0)si=i})}if(si>=0)w.spots[si].qty--}
     w.qty=Math.max(0,(+w.qty||0)-1); if(sc!=='')w.score=sc; save(); ui.sheet=null; render(); toast('Registrert. '+w.qty+' igjen');
   }
   else if(a==='prFind'){var pe=document.getElementById('pr_text');ui.pr.src=val('pr_src');ui.pr.max=+val('pr_max')||100;ui.pr.text=pe?pe.value:'';ui.pr.url=val('pr_url');ui.pr.props=buildProps(ui.pr.text,ui.pr.max);pickTarget();ui.pr.done=true;render()}
@@ -376,7 +378,7 @@ document.addEventListener('click',function(e){
   else if(a==='missSkip'){var nx=missNext(ui.pr.target,[ui.pr.target]);ui.pr.target=nx;ui.pr.text='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missStop'){ui.pr.target='';ui.pr.props=[];ui.pr.done=false;render()}
   else if(a==='missAll'){ui.missAll=!ui.missAll;render()}
-  else if(a==='setAllSite'){var sv=val('all_site').trim();if(!sv){toast('Skriv inn et lagringssted');return}var cn=0;db.wines.forEach(function(w){if(!w.example&&!w.site){w.site=sv;cn++}});save();render();toast(cn+' viner satt til '+sv)}
+  else if(a==='setAllSite'){var sv=val('all_site').trim();if(!sv){toast('Skriv inn et lagringssted');return}var cn=0;db.wines.forEach(function(w){if(!w.example&&!w.site){w.site=sv;(w.spots||[]).forEach(function(x){if(!x.site)x.site=sv});cn++}});save();render();toast(cn+' viner satt til '+sv)}
   else if(a==='hideSiteBanner'){ui.siteBanner=true;render()}
   else if(a==='rkLocAll'){ui.rk.locs={};render()}
   else if(a==='rcpClear'){ui.imp=[];render()}
@@ -478,6 +480,7 @@ document.addEventListener('change',function(e){
   else if(id==='impFile'&&e.target.files[0]){var r=new FileReader();r.onload=function(){doImport(String(r.result))};r.readAsText(e.target.files[0])}
 });
 document.addEventListener('input',function(e){
+  if(e.target.dataset&&e.target.dataset.sp==='qty'){spTot();return}
   if(e.target.id==='def_site'){try{localStorage.setItem('vinkjeller.site',e.target.value.trim())}catch(x){}return}
   if(e.target.id==='lg_q'){ui.lg.q=e.target.value;var lp=e.target.selectionStart;render();var le2=document.getElementById('lg_q');le2.focus();try{le2.setSelectionRange(lp,lp)}catch(x){}return}
   if(e.target.id==='rk_text'){ui.rk.text=e.target.value;var rp=e.target.selectionStart;render();var re2=document.getElementById('rk_text');re2.focus();try{re2.setSelectionRange(rp,rp)}catch(x){}return}
@@ -494,7 +497,9 @@ document.addEventListener('submit',function(e){
   var w=ui.sheet.id?byId(ui.sheet.id):null, isNew=!w;
   if(isNew){w={id:uid(),added:Date.now()}; db.wines.push(w)}
   w.name=val('f_name');w.producer=val('f_producer');w.vintage=val('f_vintage');w.country=val('f_country');w.region=val('f_region');w.grape=val('f_grape');
-  w.qty=Math.max(0,parseInt(val('f_qty'),10)||0);w.location=val('f_location');w.site=val('f_site').trim();w.price=val('f_price');w.nowPrice=val('f_nowPrice');
+  var sps=readSpots();if(!sps.length)sps=[{site:'',location:'',qty:0}];
+  var nz=sps.filter(function(x){return x.qty>0});if(nz.length&&nz.length<sps.length)sps=nz;
+  w.qty=sps.reduce(function(a,x){return a+x.qty},0);w.spots=sps.length>=2?sps:undefined;if(!w.spots)delete w.spots;w.site=sps[0].site;w.location=sps[0].location;w.price=val('f_price');w.nowPrice=val('f_nowPrice');
   w.from=val('f_from');w.to=val('f_to');w.score=val('f_score');w.vmp=val('f_vmp');w.ean=val('f_ean');w.type=val('f_type');w.food=val('f_food')?val('f_food').split(/\s*,\s*/).filter(Boolean):[];w.notes=val('f_notes');var lk=val('f_link');if(lk&&!/^https?:\/\//i.test(lk))lk='https://'+lk;w.link=lk; delete w.example;
   var f=document.getElementById('f_photo').files[0], id=w.id;
   save(); ui.sheet=null; render(); toast(isNew?'Vin lagt til':'Endringer lagret');
@@ -1104,7 +1109,7 @@ function applyBulk(){
   Object.keys(map).forEach(function(k){var v=val(map[k]);if(v!=='')ch[k]=v});
   var ids=Object.keys(ui.sel||{}),keys=Object.keys(ch);
   if(!keys.length){toast('Ingen felt er utfylt');return}
-  ids.forEach(function(id){var w=byId(id);if(w){keys.forEach(function(k){w[k]=ch[k]});delete w.example}});
+  ids.forEach(function(id){var w=byId(id);if(w){keys.forEach(function(k){w[k]=ch[k]});if(w.spots)w.spots.forEach(function(x){if(ch.site!==undefined)x.site=ch.site;if(ch.location!==undefined)x.location=ch.location});delete w.example}});
   save();ui.sel=null;ui.sheet=null;render();toast(ids.length+' viner endret');
 }
 
@@ -1662,6 +1667,28 @@ function ptsVal(w){
   return rs.length?Math.max.apply(null,rs.map(n100)):null;
 }
 var NOSITE='(uten lagringssted)';
+function spotsOf(w){return (Array.isArray(w.spots)&&w.spots.length>=2)?w.spots:[{site:w.site||'',location:w.location||'',qty:+w.qty||0}]}
+function sitesOf(w){var m={},o=[],sp=spotsOf(w),act=sp.filter(function(x){return x.qty>0});(act.length?act:sp).forEach(function(x){var k=String(x.site||'').trim()||NOSITE;if(!m[k]){m[k]=1;o.push(k)}});return o}
+function spotQty(w,site){return spotsOf(w).reduce(function(a,x){return a+(((String(x.site||'').trim()||NOSITE)===site)?(+x.qty||0):0)},0)}
+function spotTxt(x){return [x.site,x.location].filter(Boolean).join(', ')||'uten sted'}
+function fixSpots(w){
+  if(!Array.isArray(w.spots)||!w.spots.length){delete w.spots;return}
+  var mm={},sp=[];
+  w.spots.forEach(function(x){var o={site:String(x.site||'').trim(),location:String(x.location||'').trim(),qty:Math.max(0,parseInt(x.qty,10)||0)},k=o.site+'\u0001'+o.location;if(mm[k])mm[k].qty+=o.qty;else{mm[k]=o;sp.push(o)}});
+  if(sp.length<2){if(sp.length){w.site=sp[0].site;w.location=sp[0].location}delete w.spots;return}
+  var q=Math.max(0,+w.qty||0),tot=sp.reduce(function(a,x){return a+x.qty},0),d=q-tot;
+  if(d>0)sp[0].qty+=d;else for(var i=sp.length-1;i>=0&&d<0;i--){var t=Math.min(sp[i].qty,-d);sp[i].qty-=t;d+=t}
+  w.spots=sp;w.site=sp[0].site;w.location=sp[0].location;
+}
+function spotLine(w){
+  if(Array.isArray(w.spots)&&w.spots.length>=2)return '<div class="meta">Lagring: '+esc(w.spots.filter(function(x){return x.qty>0}).map(function(x){return spotTxt(x)+' ('+x.qty+')'}).join(' · '))+'</div>';
+  return (w.site||w.location)?'<div class="meta">Lagring: '+esc([w.site,w.location].filter(Boolean).join(' · '))+'</div>':'';
+}
+function spotsHtml(rows){
+  return rows.map(function(x){return '<div class="sprow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end"><div style="flex:1 1 120px"><span class="meta">Lagringssted</span><input data-sp="site" aria-label="Lagringssted" list="sitelist" autocomplete="off" placeholder="Hjemme, hytte …" value="'+esc(x.site||'')+'"></div><div style="flex:1 1 120px"><span class="meta">Plassering</span><input data-sp="location" aria-label="Plassering" placeholder="reol, rom, kasse" value="'+esc(x.location||'')+'"></div><div style="flex:0 0 72px"><span class="meta">Antall</span><input data-sp="qty" aria-label="Antall flasker" type="number" min="0" inputmode="numeric" value="'+esc(x.qty==null?1:x.qty)+'"></div><button class="btn ghost small" type="button" data-act="spDel" aria-label="Fjern dette stedet">×</button></div>'}).join('');
+}
+function readSpots(){return Array.prototype.map.call(document.querySelectorAll('#spotsBox .sprow'),function(r){var g=function(k){return r.querySelector('[data-sp='+k+']').value.trim()};return {site:g('site'),location:g('location'),qty:Math.max(0,parseInt(g('qty'),10)||0)}})}
+function spTot(){var e=document.getElementById('spTot');if(e)e.textContent='Sum: '+readSpots().reduce(function(a,x){return a+x.qty},0)+' flasker'}
 function wineLoc(w){return String(w.site||'').trim()||NOSITE}
 function plassering(w){return String(w.location||'').trim()||NOSITE}
 function defSite(){try{return localStorage.getItem('vinkjeller.site')||''}catch(e){return ''}}
@@ -1690,7 +1717,7 @@ function rankList(){
     if(r.stock&&!(w.qty>0))return;
     if(r.type&&w.type!==r.type)return;
     if(r.region&&regionKey(w)!==r.region)return;
-    var sl=selLocs();if(sl.length&&sl.indexOf(wineLoc(w))<0)return;
+    var sl=selLocs();if(sl.length&&!sitesOf(w).some(function(k){return sl.indexOf(k)>=0}))return;
     var i=rankInfo(w,q);
     if(!r.wait&&i.st.k==='wait')return;
     if(q&&r.only&&!i.F)return;
@@ -1714,7 +1741,7 @@ function vRang(){
   var r=ui.rk,types=uniq(db.wines.map(function(w){return w.type})),regions=uniq(db.wines.map(regionKey)),foods=uniq([].concat.apply([],db.wines.map(function(w){return w.food||[]})));
   var res=rankList(),untyped=db.wines.filter(function(w){return !w.type&&!w.example}).length;
   var SORTS=[['samlet','Samlet (poeng, drikkevindu og mat)'],['poeng','Poeng (høyest først)'],['vindu','Drikkevindu (haster mest først)'],['region','Region'],['type','Type'],['mat','Matpassing'],['sted','Lagringssted']];
-  var locMap={};db.wines.forEach(function(w){if(w.example||(r.stock&&!(w.qty>0)))return;var k=wineLoc(w);locMap[k]=(locMap[k]||0)+(+w.qty||0)});
+  var locMap={};db.wines.forEach(function(w){if(w.example||(r.stock&&!(w.qty>0)))return;spotsOf(w).forEach(function(x){var k=String(x.site||'').trim()||NOSITE;locMap[k]=(locMap[k]||0)+(+x.qty||0)})});
   var locKeys=Object.keys(locMap).sort(locCmp),sl=selLocs();
   var locHtml='<details class="panel" style="margin:0 0 10px"'+(sl.length?' open':'')+'><summary style="cursor:pointer;font-weight:600">Lagringssted: '+(sl.length?esc(sl.length===1?sl[0]:sl.length+' valgt'):'alle')+'</summary><div style="margin-top:8px;max-height:260px;overflow:auto">'+
     locKeys.map(function(k){return '<label class="chk" style="padding:3px 0"><input type="checkbox" data-rl="'+esc(k)+'"'+(r.locs&&r.locs[k]?' checked':'')+'> <span>'+esc(k)+' <span class="meta">'+locMap[k]+' fl.</span></span></label>'}).join('')+'</div>'+
@@ -1742,9 +1769,9 @@ function vRang(){
     return wineRow(x.w,'<div class="meta mono">'+esc(p.join(' · '))+'</div>');
   };
   if(r.group){
-    var gm={},go=[];res.rows.forEach(function(x){var k=wineLoc(x.w);if(!gm[k]){gm[k]=[];go.push(k)}gm[k].push(x)});
+    var gm={},go=[];res.rows.forEach(function(x){sitesOf(x.w).forEach(function(k){if(!gm[k]){gm[k]=[];go.push(k)}gm[k].push(x)})});
     go.sort(locCmp);
-    h+=go.map(function(k){var rows=gm[k],nb=rows.reduce(function(a,x){return a+(+x.w.qty||0)},0);return '<h3 style="margin:18px 0 6px;font-size:16px">'+esc(k)+' <span class="meta">'+rows.length+(rows.length===1?' vin':' viner')+' · '+nb+' fl.</span></h3><div class="list">'+rows.map(rowH).join('')+'</div>'}).join('');
+    h+=go.map(function(k){var rows=gm[k],nb=rows.reduce(function(a,x){return a+spotQty(x.w,k)},0);return '<h3 style="margin:18px 0 6px;font-size:16px">'+esc(k)+' <span class="meta">'+rows.length+(rows.length===1?' vin':' viner')+' · '+nb+' fl.</span></h3><div class="list">'+rows.map(rowH).join('')+'</div>'}).join('');
   }else h+='<div class="list" style="margin-top:12px">'+res.rows.map(rowH).join('')+'</div>';
   return h;
 }
