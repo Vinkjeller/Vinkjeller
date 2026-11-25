@@ -99,7 +99,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.25a</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
+  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.25b</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
   <nav role="tablist" id="tabs"></nav>
   <div id="banner"></div>
   <main id="view"></main>
@@ -2040,16 +2040,21 @@ function vivinoParse(lines){
 }
 
 function vmpParse(text){
-  var clean=String(text).replace(/\[([^\]]*)\]\([^)]*\)/g,'$1'),L=clean.split('\n').map(function(l){return l.trim()});
+  var clean=String(text).replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\r/g,''),L0=clean.split('\n').map(function(l){return l.trim()}),L=[];
+  /* rå kopi fra nettleseren har ofte nøkkel og verdi på hver sin linje: slå dem sammen */
+  var KEYONLY=/^\*?\s*(Varetype|Varenummer|Lukt|Smak|Farge|Land, distrikt|Produsent|Årgang|Metode|Råstoff|Inneholder|Emballasjetype|Korktype|Utvalg|Kategori|Grossist|Transportør|Alkohol|Sukker|Syre)\s*:?\s*$/;
+  for(var z=0;z<L0.length;z++){var kz=L0[z].match(KEYONLY);if(kz){var nz=z+1;while(nz<L0.length&&!L0[nz])nz++;if(nz<L0.length&&!KEYONLY.test(L0[nz])&&!/^(Passer til|Karakteristikk|Stil,)/i.test(L0[nz])){L.push(kz[1]+L0[nz].replace(/^\*\s*/,''));z=nz;continue}}L.push(L0[z])}
+  clean=L.join('\n');
   if(!/Varetype/.test(clean)||!/Varenummer\s*\d{5,8}/.test(clean))return null;
-  var o={src:'Vinmonopolet'},m,k;
+  var o={src:'Vinmonopolet'},m,k,pi0=-1;for(var iq=0;iq<L.length;iq++){if(/^Kr\s*\d/.test(L[iq])){pi0=iq;break}}
   o.vmp=clean.match(/Varenummer\s*(\d{5,8})/)[1];
   if((m=clean.match(/Kr\s*(\d[\d\s.]*,\d{2})/)))o.price=pnum(m[1]);
   if((m=clean.match(/Kr\s*\d[\d\s.]*,\d{2}\s*(\d+(?:,\d+)?\s*cl)/i)))o.volume=m[1].replace(/\s+/g,' ');
+  if(!o.volume&&pi0>=0){for(var jv=pi0;jv<Math.min(L.length,pi0+4);jv++){if((m=L[jv].match(/(\d+(?:,\d+)?)\s*cl\b/i))){o.volume=m[1]+' cl';break}}}
   if((m=clean.match(/Alkohol\s*([\d,.]+\s*%)/)))o.abv=m[1].replace(/\s+/g,'');
   if((m=clean.match(/Sukker\s*([\d,.]+\s*g\/l)/)))o.sugar=m[1];
   if((m=clean.match(/Syre\s*([\d,.]+\s*g\/l)/)))o.acid=m[1];
-  var kv={},keys=/^\*?\s*(Varetype|Lukt|Smak|Farge|Land, distrikt|Produsent|Årgang|Metode|Råstoff|Inneholder|Emballasjetype|Korktype|Utvalg|Kategori|Grossist|Transportør)\s*(.*)$/;
+  var kv={},keys=/^\*?\s*(Varetype|Lukt|Smak|Farge|Land, distrikt|Produsent|Årgang|Metode|Råstoff|Inneholder|Emballasjetype|Korktype|Utvalg|Kategori|Grossist|Transportør)\s*:?\s*(.*)$/;
   L.forEach(function(l){var x=l.match(keys);if(x&&!kv[x[1]]&&x[2])kv[x[1]]=x[2].trim()});
   if(kv['Land, distrikt']){var cp=kv['Land, distrikt'].split(',').map(function(x){return x.trim()}).filter(Boolean);o.country=cp[0];if(cp.length>1)o.region=cp.slice(1).join(', ')}
   if(kv.Produsent)o.producer=kv.Produsent;
@@ -2058,7 +2063,8 @@ function vmpParse(text){
   var vt=kv.Varetype||'';
   [[/brennevin|whisk|konjakk|cognac|armagnac|calvados|\brom\b|\bgin\b|vodka|akevitt|likør|bitter|tequila|mezcal|brandy|grappa|pastis/i,'Brennevin'],[/musserende/i,'Musserende'],[/ros[eé]/i,'Rosé'],[/rød/i,'Rød'],[/hvit/i,'Hvit'],[/dessert|søt/i,'Dessert'],[/sterk|port|sherry|madeira/i,'Sterkvin']].some(function(t){if(t[0].test(vt)){o.type=t[1];return true}return false});
   var pi=-1;for(var i=0;i<L.length;i++){if(/^Kr\s*\d/.test(L[i])){pi=i;break}}
-  var name=pi>=2?L[pi-2]:'';
+  var name='',clv=normS([o.country,o.region].filter(Boolean).join(' ')),cvn=normS(o.country||'');
+  if(pi>0){for(var j0=pi-1;j0>=0&&j0>=pi-8;j0--){var c0=L[j0];if(!c0||/^\*/.test(c0)||c0.length<3)continue;var cn=normS(c0);if(cn===clv||cn===cvn||/^(hjem|tilbake|vinmonopolet|produkter|vin|brusk|brenneri)\b/i.test(c0)&&c0.length<22)continue;if(kv.Varetype&&normS(kv.Varetype.split(' - ')[0])===cn)continue;if(/^(Kr|Kjøp|Halden|Post)\b/.test(c0))continue;name=c0;break}}
   if(!name||/ - /.test(name)){name='';for(var j=0;j<L.length;j++){if(/\s((19|20)\d{2}|NV)$/.test(L[j])&&!/^\*/.test(L[j])){name=L[j];break}}}
   var svn=splitVintage(name);
   if(/\s(NV)$/.test(name)){o.name=name.replace(/\s+NV$/,'').trim()}
