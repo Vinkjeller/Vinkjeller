@@ -99,7 +99,7 @@ label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;letter-s
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.25b</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
+  <div class="top"><h1>Vinkjelleren <small class="ver" style="font-size:11px;font-weight:400;color:var(--muted);letter-spacing:0">v2026.11.25c</small></h1><div class="sub" id="summary"></div><div class="sub" id="syncst" style="flex-basis:100%" role="status"></div></div>
   <nav role="tablist" id="tabs"></nav>
   <div id="banner"></div>
   <main id="view"></main>
@@ -2052,7 +2052,7 @@ function vmpParse(text){
   if((m=clean.match(/Kr\s*\d[\d\s.]*,\d{2}\s*(\d+(?:,\d+)?\s*cl)/i)))o.volume=m[1].replace(/\s+/g,' ');
   if(!o.volume&&pi0>=0){for(var jv=pi0;jv<Math.min(L.length,pi0+4);jv++){if((m=L[jv].match(/(\d+(?:,\d+)?)\s*cl\b/i))){o.volume=m[1]+' cl';break}}}
   if((m=clean.match(/Alkohol\s*([\d,.]+\s*%)/)))o.abv=m[1].replace(/\s+/g,'');
-  if((m=clean.match(/Sukker\s*([\d,.]+\s*g\/l)/)))o.sugar=m[1];
+  if((m=clean.match(/Sukker\s*((?:Under |Over )?[\d,.]+\s*g\/l)/i)))o.sugar=m[1];
   if((m=clean.match(/Syre\s*([\d,.]+\s*g\/l)/)))o.acid=m[1];
   var kv={},keys=/^\*?\s*(Varetype|Lukt|Smak|Farge|Land, distrikt|Produsent|Årgang|Metode|Råstoff|Inneholder|Emballasjetype|Korktype|Utvalg|Kategori|Grossist|Transportør)\s*:?\s*(.*)$/;
   L.forEach(function(l){var x=l.match(keys);if(x&&!kv[x[1]]&&x[2])kv[x[1]]=x[2].trim()});
@@ -2064,7 +2064,8 @@ function vmpParse(text){
   [[/brennevin|whisk|konjakk|cognac|armagnac|calvados|\brom\b|\bgin\b|vodka|akevitt|likør|bitter|tequila|mezcal|brandy|grappa|pastis/i,'Brennevin'],[/musserende/i,'Musserende'],[/ros[eé]/i,'Rosé'],[/rød/i,'Rød'],[/hvit/i,'Hvit'],[/dessert|søt/i,'Dessert'],[/sterk|port|sherry|madeira/i,'Sterkvin']].some(function(t){if(t[0].test(vt)){o.type=t[1];return true}return false});
   var pi=-1;for(var i=0;i<L.length;i++){if(/^Kr\s*\d/.test(L[i])){pi=i;break}}
   var name='',clv=normS([o.country,o.region].filter(Boolean).join(' ')),cvn=normS(o.country||'');
-  if(pi>0){for(var j0=pi-1;j0>=0&&j0>=pi-8;j0--){var c0=L[j0];if(!c0||/^\*/.test(c0)||c0.length<3)continue;var cn=normS(c0);if(cn===clv||cn===cvn||/^(hjem|tilbake|vinmonopolet|produkter|vin|brusk|brenneri)\b/i.test(c0)&&c0.length<22)continue;if(kv.Varetype&&normS(kv.Varetype.split(' - ')[0])===cn)continue;if(/^(Kr|Kjøp|Halden|Post)\b/.test(c0))continue;name=c0;break}}
+  var anc=pi;if(anc<0){for(var ia=0;ia<L.length;ia++){if(/^(Utgått|Alkohol\s*[\d,.]|Passer til|Kjøp|Karakteristikk)/.test(L[ia])){anc=ia;break}}}
+  if(anc>0){for(var j0=anc-1;j0>=0&&j0>=anc-8;j0--){var c0=L[j0];if(!c0||/^\*/.test(c0)||c0.length<3)continue;var cn=normS(c0);if(cn===clv||cn===cvn||/^(hjem|tilbake|vinmonopolet|produkter|vin|brusk|brenneri)\b/i.test(c0)&&c0.length<22)continue;if(kv.Varetype&&normS(kv.Varetype.split(' - ')[0])===cn)continue;if(/^(Kr|Kjøp|Halden|Post)\b/.test(c0))continue;name=c0;break}}
   if(!name||/ - /.test(name)){name='';for(var j=0;j<L.length;j++){if(/\s((19|20)\d{2}|NV)$/.test(L[j])&&!/^\*/.test(L[j])){name=L[j];break}}}
   var svn=splitVintage(name);
   if(/\s(NV)$/.test(name)){o.name=name.replace(/\s+NV$/,'').trim()}
@@ -2082,6 +2083,7 @@ function vmpParse(text){
   if(ai>0){for(var q2=ai-1;q2>=0&&q2>=ai-3;q2--){if(L[q2]&&L[q2].length>25&&!/^(Kr|Kjøp|Halden|Post|Vis )/.test(L[q2])){put('Beskrivelse',L[q2]);break}}}
   var secBul=function(re,stop){var a=-1,r=[];for(var q=0;q<L.length;q++){if(re.test(L[q])){a=q;break}}if(a<0)return '';for(var q3=a+1;q3<L.length;q3++){if(stop.test(L[q3])||/^\*?\s*Varetype/.test(L[q3]))break;var x=L[q3].replace(/^\*\s*/,'').trim();if(x)r.push(x)}return r.join('; ')};
   put('Karakteristikk',secBul(/^Karakteristikk/i,/^Stil,/i));put('Stil og lagring',secBul(/^Stil, lagring/i,/^\s*$zzz/));
+  if(/^Utgått\b/m.test(clean))put('Status','Utgått hos Vinmonopolet');
   if(Object.keys(vi).length)o.vinfo=vi;
   if(kv.Grossist)o.importer=kv.Grossist;
   var title=[o.name,o.vintage].filter(Boolean).join(' ');
